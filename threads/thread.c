@@ -163,6 +163,17 @@ thread_tick (void) {
 		}
 	}
 
+	// struct list_elem *e;
+	// int64_t current_tick = timer_ticks();
+	// for(e = list_begin(&sleep_list); e != list_end(&sleep_list);){
+	// 	struct thread *t = list_entry(e, struct thread, elem);
+	// 	e = list_next(e);
+	// 	if(t->sleep_ticks < current_tick){
+	// 		list_remove(&t->elem);
+	// 		thread_unblock(t);
+	// 	}
+	// }
+
 	/* Enforce preemption. */
 	if (++thread_ticks >= TIME_SLICE)
 		intr_yield_on_return ();
@@ -604,5 +615,5 @@ allocate_tid (void) {
 }
 
 void insert_sleep_list(void){
-	list_push_back(&sleep_list,&thread_current()->elem);
+	list_push_back(&sleep_list, &thread_current()->elem);
 }
