@@ -28,6 +28,8 @@
    that are ready to run but not actually running. */
 static struct list ready_list;
 
+static struct list sleep_list; //asleep thread list
+
 /* Idle thread. */
 static struct thread *idle_thread;
 
@@ -108,6 +110,7 @@ thread_init (void) {
 	/* Init the globla thread context */
 	lock_init (&tid_lock);
 	list_init (&ready_list);
+	list_init (&sleep_list); // sleep_list 초기화
 	list_init (&destruction_req);
 
 	/* Set up a thread structure for the running thread. */
@@ -148,6 +151,17 @@ thread_tick (void) {
 #endif
 	else
 		kernel_ticks++;
+
+	struct list_elem *sl = list_begin(&sleep_list); //sleep_list의 시작 부분 정의
+	int64_t current_ticks = timer_ticks();
+	while(sl != list_end(&sleep_list)){
+		struct thread *t = list_entry(sl, struct thread, elem);
+		sl = list_next(sl);
+		if(current_ticks > t->sleep_ticks){
+			list_remove(&t->elem);
+			thread_unblock(t);
+		}
+	}
 
 	/* Enforce preemption. */
 	if (++thread_ticks >= TIME_SLICE)
@@ -587,4 +601,8 @@ allocate_tid (void) {
 	lock_release (&tid_lock);
 
 	return tid;
+}
+
+void insert_sleep_list(void){
+	list_push_back(&sleep_list,&thread_current()->elem);
 }
