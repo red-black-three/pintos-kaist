@@ -88,13 +88,16 @@ timer_elapsed (int64_t then) {
 }
 
 /* Suspends execution for approximately TICKS timer ticks. */
-void timer_sleep (int64_t ticks) {
+// 현재 스레드를 ticks 시간 동안 잠재우는 함수
+void
+timer_sleep (int64_t ticks) {
 	int64_t start = timer_ticks ();
 
 	ASSERT (intr_get_level () == INTR_ON);
-	// 기존 코드
+	// time_elapsed(start) : timer_sleep이 호출된 시점에서 몇 tick이 지났는지 반환.
+	// 2.5초 전에 time_sleep 함수가 호출됐다면 2500 반환.
 	// while (timer_elapsed (start) < ticks)
-	// 	thread_yield ();	// thread_yield(): 현재 CPU할당을 다른 스레드에게 양보하고 ready_list 제일 뒤로 이동
+	// 	thread_yield ();  // 프로세서를 다른 스레드에게 양보하고 ready_list 끝으로 이동
 
 	thread_sleep(start + ticks);
 }
@@ -124,11 +127,14 @@ timer_print_stats (void) {
 }
 
 /* Timer interrupt handler. */
-static void timer_interrupt (struct intr_frame *args) {
+
+static void
+timer_interrupt (struct intr_frame *args UNUSED) {  // UNUSED?
 	ticks++;
 	thread_tick ();
 
-	// 매 tick마다 sleep queue에서 깨어날 thread가 있는지 확인하며 깨우는 함수를 호출하도록 함
+	// 매 tick마다 sleep queue에서 깨어날 thread가 있는지 확인하여,
+	// 깨우는 함수를 호출하도록 함
 	if (get_next_tick_to_awake() <= ticks) {
 		thread_awake(ticks);
 	}
