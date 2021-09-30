@@ -159,3 +159,7 @@ int64_t get_next_tick_to_awake(void);
 
 // 가장 먼저 일어날 스레드가 일어날 시각을 업데이트함
 void update_next_tick_to_awake(int64_t ticks);
+
+bool thread_compare_priority(const struct list_elem *a, const struct list_elem *b, void *aux UNUSED);
+
+void test_max_priority(void);
