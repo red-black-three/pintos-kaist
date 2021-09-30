@@ -28,7 +28,8 @@
    that are ready to run but not actually running. */
 static struct list ready_list;
 
-static struct list sleep_list; //asleep thread list
+static struct list sleep_list;
+static int64_t next_tick_to_awake;
 
 /* Idle thread. */
 static struct thread *idle_thread;
@@ -94,8 +95,7 @@ static uint64_t gdt[3] = { 0, 0x00af9a000000ffff, 0x00cf92000000ffff };
 
    It is not safe to call thread_current() until this function
    finishes. */
-void
-thread_init (void) {
+void thread_init (void) {
 	ASSERT (intr_get_level () == INTR_OFF);
 
 	/* Reload the temporal gdt for the kernel
@@ -112,12 +112,71 @@ thread_init (void) {
 	list_init (&ready_list);
 	list_init (&sleep_list); // sleep_list 초기화
 	list_init (&destruction_req);
+	list_init(&sleep_list);
+
+	// sleep_list 초기화 함수
+	list_init(&sleep_list);
 
 	/* Set up a thread structure for the running thread. */
 	initial_thread = running_thread ();
 	init_thread (initial_thread, "main", PRI_DEFAULT);
 	initial_thread->status = THREAD_RUNNING;
 	initial_thread->tid = allocate_tid ();
+}
+
+// 가장 먼저 일어나야 할 스레드가 일어날 시각 반환
+void update_next_tick_to_awake(int64_t ticks) {
+	// next_tick_to_awake 변수가 깨워야 하는 스레드의 깨어날 tick 값 중 가장 작은 tick
+	// 갖도록 업데이트
+	next_tick_to_awake = (next_tick_to_awake > ticks) ? ticks : next_tick_to_awake;
+}
+
+// 가장 먼저 일어나야 할 스레드가 일어날 시각 반환
+int64_t get_next_tick_to_awake(void) {
+	return next_tick_to_awake;
+}
+
+// 스레드를 ticks 시각까지 재우는 함수
+void thread_sleep(int64_t ticks) {
+	struct thread *cur;
+
+	// 인터럽트를 금지하고 이전 인터럽트 레벨을 저장함
+	enum intr_level old_level;
+	old_level = intr_disable();
+    
+	// idle 스레드는 sleep되지 않아야 함
+	cur = thread_current();
+	ASSERT(cur != idle_thread);
+
+	// awake 함수가 실행되어야 할 tick 값을 update
+	update_next_tick_to_awake(cur->wakeup_tick = ticks);
+
+	// 현재 스레드를 슬립 큐에 삽입한 후 스케줄
+	list_push_back(&sleep_list, &cur->elem);
+
+	// 이 스레드를 블락하고 다시 스케줄 될 때까지 블락된 상태로 대기
+	thread_block();
+
+	// 인터럽트를 다시 받아들이도록 수정
+	intr_set_level(old_level);
+}
+
+// 푹 자고 있는 스레드 중에 깨어날 시각이 ticks 시각이 지난 애들을 모조리 깨우는 함수
+void thread_awake(int64_t wakeup_tick) {
+	next_tick_to_awake = INT64_MAX;
+	struct list_elem *e;
+	e = list_begin(&sleep_list);
+	while (e != list_end(&sleep_list)) {
+		struct thread *t = list_entry(e, struct thread, elem);
+
+		if (wakeup_tick >= t->wakeup_tick) {
+			e = list_remove(&t->elem);
+			thread_unblock(t);
+		} else {
+			e = list_next(e);
+			update_next_tick_to_awake(t->wakeup_tick);
+		}
+	}
 }
 
 /* Starts preemptive thread scheduling by enabling interrupts.
@@ -152,29 +211,7 @@ thread_tick (void) {
 	else
 		kernel_ticks++;
 
-	struct list_elem *sl = list_begin(&sleep_list); //sleep_list의 시작 부분 정의
-	int64_t current_ticks = timer_ticks();
-	while(sl != list_end(&sleep_list)){
-		struct thread *t = list_entry(sl, struct thread, elem);
-		sl = list_next(sl);
-		if(current_ticks > t->sleep_ticks){
-			list_remove(&t->elem);
-			thread_unblock(t);
-		}
-	}
-
-	// struct list_elem *e;
-	// int64_t current_tick = timer_ticks();
-	// for(e = list_begin(&sleep_list); e != list_end(&sleep_list);){
-	// 	struct thread *t = list_entry(e, struct thread, elem);
-	// 	e = list_next(e);
-	// 	if(t->sleep_ticks < current_tick){
-	// 		list_remove(&t->elem);
-	// 		thread_unblock(t);
-	// 	}
-	// }
-
-	/* Enforce preemption. */
+/* Enforce preemption. */
 	if (++thread_ticks >= TIME_SLICE)
 		intr_yield_on_return ();
 }
@@ -201,8 +238,7 @@ thread_print_stats (void) {
    The code provided sets the new thread's `priority' member to
    PRIORITY, but no actual priority scheduling is implemented.
    Priority scheduling is the goal of Problem 1-3. */
-tid_t
-thread_create (const char *name, int priority,
+tid_t thread_create (const char *name, int priority,
 		thread_func *function, void *aux) {
 	struct thread *t;
 	tid_t tid;
@@ -244,7 +280,7 @@ thread_create (const char *name, int priority,
 void
 thread_block (void) {
 	ASSERT (!intr_context ());
-	ASSERT (intr_get_level () == INTR_OFF);
+	ASSERT (intr_get_level () == INTR_OFF);			// block 위해 interrupt off
 	thread_current ()->status = THREAD_BLOCKED;
 	schedule ();
 }
@@ -265,7 +301,7 @@ thread_unblock (struct thread *t) {
 
 	old_level = intr_disable ();
 	ASSERT (t->status == THREAD_BLOCKED);
-	list_push_back (&ready_list, &t->elem);
+	list_push_back (&ready_list, &t->elem);  // ready_list의 맨 뒤에 넣음
 	t->status = THREAD_READY;
 	intr_set_level (old_level);
 }
@@ -279,8 +315,7 @@ thread_name (void) {
 /* Returns the running thread.
    This is running_thread() plus a couple of sanity checks.
    See the big comment at the top of thread.h for details. */
-struct thread *
-thread_current (void) {
+struct thread *thread_current (void) {
 	struct thread *t = running_thread ();
 
 	/* Make sure T is really a thread.
@@ -445,7 +480,7 @@ static struct thread *
 next_thread_to_run (void) {
 	if (list_empty (&ready_list))
 		return idle_thread;
-	else
+	else  // ready_list의 맨 앞에서 꺼냄
 		return list_entry (list_pop_front (&ready_list), struct thread, elem);
 }
 
