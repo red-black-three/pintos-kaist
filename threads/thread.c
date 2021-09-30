@@ -238,8 +238,7 @@ thread_print_stats (void) {
    The code provided sets the new thread's `priority' member to
    PRIORITY, but no actual priority scheduling is implemented.
    Priority scheduling is the goal of Problem 1-3. */
-tid_t thread_create (const char *name, int priority,
-		thread_func *function, void *aux) {
+tid_t thread_create (const char *name, int priority, thread_func *function, void *aux) {
 	struct thread *t;
 	tid_t tid;
 
@@ -267,6 +266,8 @@ tid_t thread_create (const char *name, int priority,
 
 	/* Add to run queue. */
 	thread_unblock (t);
+	// 우선순위에 따른 CPU 선점하는 함수 추가
+	preemption_priority();
 
 	return tid;
 }
@@ -293,15 +294,16 @@ thread_block (void) {
    be important: if the caller had disabled interrupts itself,
    it may expect that it can atomically unblock a thread and
    update other data. */
-void
-thread_unblock (struct thread *t) {
+void thread_unblock (struct thread *t) {
 	enum intr_level old_level;
 
 	ASSERT (is_thread (t));
 
 	old_level = intr_disable ();
 	ASSERT (t->status == THREAD_BLOCKED);
-	list_push_back (&ready_list, &t->elem);  // ready_list의 맨 뒤에 넣음
+	// list_push_back (&ready_list, &t->elem);  // ready_list의 맨 뒤에 넣음
+	// list_push_back 대신 list_insert_oerdered, compare_priority 함수 이용(내림차순으로 인자 추가)
+	list_insert_ordered(&ready_list, &t->elem, compare_priority, 0);
 	t->status = THREAD_READY;
 	intr_set_level (old_level);
 }
@@ -354,24 +356,27 @@ thread_exit (void) {
 
 /* Yields the CPU.  The current thread is not put to sleep and
    may be scheduled again immediately at the scheduler's whim. */
-void
-thread_yield (void) {
+void thread_yield (void) {
 	struct thread *curr = thread_current ();
 	enum intr_level old_level;
 
 	ASSERT (!intr_context ());
 
 	old_level = intr_disable ();
-	if (curr != idle_thread)
-		list_push_back (&ready_list, &curr->elem);
+	if (curr != idle_thread) {
+		// list_push_back (&ready_list, &curr->elem);	// 현 상태: list_push_back()함수로 ready list의 마지막 부분에 스레드 추가
+		// list_push_back 대신 list_insert_oerdered, compare_priority 함수 이용(내림차순으로 인자 추가)
+		list_insert_ordered(&ready_list, &curr->elem, compare_priority, 0);
+	}
 	do_schedule (THREAD_READY);
 	intr_set_level (old_level);
 }
 
 /* Sets the current thread's priority to NEW_PRIORITY. */
-void
-thread_set_priority (int new_priority) {
+void thread_set_priority (int new_priority) {
 	thread_current ()->priority = new_priority;
+	// 우선순위에 따른 CPU 선점하는 함수 추가
+	preemption_priority();
 }
 
 /* Returns the current thread's priority. */
@@ -651,4 +656,18 @@ allocate_tid (void) {
 
 void insert_sleep_list(void){
 	list_push_back(&sleep_list, &thread_current()->elem);
+}
+
+
+// 내림차순 정렬 만드는 함수. more 리스트 인자가 less 인자보다 크면 1(true) 리턴. 반대의 경우 0(false) 리턴
+bool compare_priority(struct list_elem *more, struct list_elem *less, void *aux UNUSED) {
+	return list_entry(more, struct thread, elem)->priority > list_entry(less, struct thread, elem)->priority;
+}
+
+// 현재 실행 중인 함수의 우선순위가 ready list의 스레드보다 낮다면 yield
+void preemption_priority(void) {
+	if (!list_empty(&ready_list) && thread_current()->priority
+	< list_entry(list_front(&ready_list), struct thread, elem)->priority) {
+		thread_yield();
+	}
 }
