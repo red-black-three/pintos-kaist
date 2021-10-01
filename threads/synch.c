@@ -189,8 +189,17 @@ void lock_acquire (struct lock *lock) {
 	ASSERT (!intr_context ());
 	ASSERT (!lock_held_by_current_thread (lock));
 
+	struct thread *cur = thread_current();
+	if (lock->holder) {
+		cur->wait_on_lock = lock;
+		// lock을 가지고 있는 스레드의 donations에 현재 스레드 elem 추가
+		list_insert_ordered(&lock->holder->donations, &cur->donation_elem, thread_compare_donate_priority, 0);
+		donate_priority();
+	}
 	sema_down (&lock->semaphore);
-	lock->holder = thread_current ();
+
+	cur->wait_on_lock = NULL;
+	lock->holder = cur;
 }
 
 /* Tries to acquires LOCK and returns true if successful or false
@@ -217,10 +226,12 @@ bool lock_try_acquire (struct lock *lock) {
    An interrupt handler cannot acquire a lock, so it does not
    make sense to try to release a lock within an interrupt
    handler. */
-void
-lock_release (struct lock *lock) {
+void lock_release (struct lock *lock) {
 	ASSERT (lock != NULL);
 	ASSERT (lock_held_by_current_thread (lock));
+
+	remove_with_lock(lock);		// lock release할 때, 자신에게 우선순위 donation했던 스레드 donations 리스트에서 제거
+	refresh_priority();			// 우선순위 재설정
 
 	lock->holder = NULL;
 	sema_up (&lock->semaphore);
