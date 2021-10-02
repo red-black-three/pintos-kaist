@@ -110,9 +110,7 @@ void thread_init (void) {
 	/* Init the globla thread context */
 	lock_init (&tid_lock);
 	list_init (&ready_list);
-	list_init (&sleep_list); // sleep_list 초기화
 	list_init (&destruction_req);
-	list_init(&sleep_list);
 
 	// sleep_list 초기화 함수
 	list_init(&sleep_list);
