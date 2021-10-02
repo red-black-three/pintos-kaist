@@ -267,6 +267,8 @@ tid_t thread_create (const char *name, int priority,
 
 	/* Add to run queue. */
 	thread_unblock (t);
+	
+	test_max_priority();
 
 	return tid;
 }
@@ -301,7 +303,8 @@ thread_unblock (struct thread *t) {
 
 	old_level = intr_disable ();
 	ASSERT (t->status == THREAD_BLOCKED);
-	list_push_back (&ready_list, &t->elem);  // ready_list의 맨 뒤에 넣음
+	// list_push_back (&ready_list, &t->elem);  // ready_list의 맨 뒤에 넣음
+	list_insert_ordered(&ready_list, &t->elem, thread_compare_priority, 0);
 	t->status = THREAD_READY;
 	intr_set_level (old_level);
 }
@@ -363,7 +366,8 @@ thread_yield (void) {
 
 	old_level = intr_disable ();
 	if (curr != idle_thread)
-		list_push_back (&ready_list, &curr->elem);
+	    list_insert_ordered(&ready_list, &curr->elem, thread_compare_priority, 0);
+		// list_push_back (&ready_list, &curr->elem);
 	do_schedule (THREAD_READY);
 	intr_set_level (old_level);
 }
@@ -371,7 +375,9 @@ thread_yield (void) {
 /* Sets the current thread's priority to NEW_PRIORITY. */
 void
 thread_set_priority (int new_priority) {
-	thread_current ()->priority = new_priority;
+	thread_current ()->init_priority = new_priority;
+	refresh_priority();
+	test_max_priority();
 }
 
 /* Returns the current thread's priority. */
@@ -469,6 +475,9 @@ init_thread (struct thread *t, const char *name, int priority) {
 	t->tf.rsp = (uint64_t) t + PGSIZE - sizeof (void *);
 	t->priority = priority;
 	t->magic = THREAD_MAGIC;
+	t->init_priority = priority;
+	t->wait_on_lock = NULL;
+	list_init(&t->donations);
 }
 
 /* Chooses and returns the next thread to be scheduled.  Should
@@ -651,4 +660,16 @@ allocate_tid (void) {
 
 void insert_sleep_list(void){
 	list_push_back(&sleep_list, &thread_current()->elem);
+}
+
+// UNUSED 붙은 인자는 있어도 되고 없어도 됨.
+// thread_compare_priority: 우선순위 정렬할 때 필요한 비교함수
+bool thread_compare_priority(const struct list_elem *a, const struct list_elem *b, void *aux UNUSED) {
+	return list_entry(a, struct thread, elem)->priority > list_entry(b, struct thread, elem)->priority;
+}
+
+// ready_list의 첫 번째 스레드가 현재 CPU 점유 중인 스레드보다 우선순위가 높으면 CPU 점유를 양보함
+void test_max_priority(void) {
+	if (!list_empty(&ready_list) && thread_current()->priority < list_entry(list_front(&ready_list), struct thread, elem)->priority)
+	    thread_yield();
 }
