@@ -264,8 +264,9 @@ tid_t thread_create (const char *name, int priority, thread_func *function, void
 
 	/* Add to run queue. */
 	thread_unblock (t);
+
 	// 우선순위에 따른 CPU 선점하는 함수 추가
-	preemption_priority();
+	test_max_priority();
 
 	return tid;
 }
@@ -361,6 +362,7 @@ void thread_yield (void) {
 	ASSERT (!intr_context ());
 
 	old_level = intr_disable ();
+
 	if (curr != idle_thread) {
 		// list_push_back (&ready_list, &curr->elem);	// 현 상태: list_push_back()함수로 ready list의 마지막 부분에 스레드 추가
 		// list_push_back 대신 list_insert_oerdered, thread_compare_priority 함수 이용(내림차순으로 인자 추가)
@@ -378,7 +380,7 @@ void thread_set_priority (int new_priority) {
 	refresh_priority();
 
 	// 우선순위에 따른 CPU 선점하는 함수 추가
-	preemption_priority();
+	test_max_priority();
 }
 
 /* Returns the current thread's priority. */
@@ -475,7 +477,7 @@ static void init_thread (struct thread *t, const char *name, int priority) {
 	t->tf.rsp = (uint64_t) t + PGSIZE - sizeof (void *);
 	t->priority = priority;
 	t->magic = THREAD_MAGIC;
-
+  
 	// for donation
 	t->init_priority = priority;
 	t->wait_on_lock = NULL;
@@ -664,20 +666,12 @@ void insert_sleep_list(void){
 	list_push_back(&sleep_list, &thread_current()->elem);
 }
 
-
 // 내림차순 정렬 만드는 함수. more 리스트 인자가 less 인자보다 크면 1(true) 리턴. 반대의 경우 0(false) 리턴
 bool thread_compare_priority(struct list_elem *higher, struct list_elem *lower, void *aux UNUSED) {
 	return list_entry(higher, struct thread, elem)->priority > list_entry(lower, struct thread, elem)->priority;
 }
 
-// 현재 실행 중인 함수의 우선순위가 ready list의 스레드보다 낮다면 yield
-void preemption_priority(void) {
-	if (!list_empty(&ready_list) && thread_current()->priority
-	< list_entry(list_front(&ready_list), struct thread, elem)->priority) {
-		thread_yield();
-	}
-}
-
+// UNUSED 붙은 인자는 있어도 되고 없어도 됨.
 // donations리스트에 스레드 추가 시, 내림차순으로 삽입하는 함수
 bool thread_compare_donate_priority(const struct list_elem *higher, const struct list_elem *lower, void *aux UNUSED) {
 	return list_entry(higher, struct thread, donation_elem)->priority > list_entry(lower, struct thread, donation_elem)->priority;
@@ -727,4 +721,9 @@ void refresh_priority(void) {
 			cur->priority = front->priority;	// 가장 높은 값의 우선순위로 수정
 		}
 	}
+
+// ready_list의 첫 번째 스레드가 현재 CPU 점유 중인 스레드보다 우선순위가 높으면 CPU 점유를 양보함
+void test_max_priority(void) {
+	if (!list_empty(&ready_list) && thread_current()->priority < list_entry(list_front(&ready_list), struct thread, elem)->priority)
+	    thread_yield();
 }

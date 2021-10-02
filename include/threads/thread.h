@@ -90,11 +90,26 @@ struct thread {
 	tid_t tid;                          // Thread identifier. 정수형. 프로세스에 1부터 부여. 최신 프로세스일수록 높은 숫자
 	enum thread_status status;          /* Thread state. */
 	char name[16];                      /* Name (for debugging purposes). */
-	int priority;                       // 0~63. 숫자 낮을 수록 우선순위 낮음.
+	int priority;                       // 0~63. 숫자 낮을수록 우선순위 낮음.
+
+	// 스레드가 priority를 양도받았다가 다시 반납할 때 원래의 priority를 복원할 수
+	// 있도록 고유의 priority 값을 저장하는 변수
+	int init_priority;
+
 	int64_t wakeup_tick;  // 깨어나야 할 tick을 저장할 변수 추가
 
 	/* Shared between thread.c and synch.c. */
 	struct list_elem elem;              /* List element. */
+
+	// 스레드가 현재 얻기 위해 기다리고 있는 lock.
+	// 스레드는 이 lock이 ralease 되기를 기다림
+	struct lock *wait_on_lock;
+
+	// 이 스레드에게 priority를 나눠준 스레드들의 리스트
+	struct list donations;
+
+	// 위 리스트를 관리하기 위한 element. 위에 elem과 구분하여 사용.
+	struct list_elem donation_elem;
 
 	int64_t sleep_ticks;
 
@@ -166,9 +181,9 @@ int64_t get_next_tick_to_awake(void);
 // 가장 먼저 일어날 스레드가 일어날 시각을 업데이트함
 void update_next_tick_to_awake(int64_t ticks);
 
+
 // 우선순위 비교 함수 선언
 bool thread_compare_priority(struct list_elem *higher, struct list_elem *lower, void *aux UNUSED);
-void preemption_priority(void);
 bool sema_compare_priority(const struct list_elem *higher, const struct list_elem *lower, void *aux UNUSED);
 bool thread_compare_donate_priority(const struct list_elem *higher, const struct list_elem *lower, void *aux UNUSED);
 
@@ -177,3 +192,5 @@ void donate_priority(void);
 void remove_with_lock(struct lock *lock);
 
 void refresh_priority(void);
+
+void test_max_priority(void);

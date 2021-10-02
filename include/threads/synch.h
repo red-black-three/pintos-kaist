@@ -46,3 +46,13 @@ void cond_broadcast (struct condition *, struct lock *);
 #define barrier() asm volatile ("" : : : "memory")
 
 #endif /* threads/synch.h */
+
+bool sema_compare_priority(const struct list_elem *l, const struct list_elem *s, void *aux);
+
+bool thread_compare_donate_priority(const struct list_elem *l, const struct list_elem *s, void *aux);
+
+void donate_priority(void);
+
+void remove_with_lock(struct lock *lock);
+
+void refresh_priority(void);
