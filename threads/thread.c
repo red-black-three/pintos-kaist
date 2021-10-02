@@ -721,6 +721,7 @@ void refresh_priority(void) {
 			cur->priority = front->priority;	// 가장 높은 값의 우선순위로 수정
 		}
 	}
+}
 
 // ready_list의 첫 번째 스레드가 현재 CPU 점유 중인 스레드보다 우선순위가 높으면 CPU 점유를 양보함
 void test_max_priority(void) {

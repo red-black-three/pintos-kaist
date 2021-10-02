@@ -113,12 +113,6 @@ struct thread {
 
 	int64_t sleep_ticks;
 
-	// donation 위한 변수 추가
-	int init_priority;					// thread의 원래 priority. 양도 받은 priority 반납 후 복원할 때 필요
-	struct lock *wait_on_lock;			// 스레드가 얻으려고 하는 lock
-	struct list donations;				// 자신에게 priority 양도해준 스레드들 리스트
-	struct list_elem donation_elem;		// donations 관리 위한 elem
-
 #ifdef USERPROG
 	/* Owned by userprog/process.c. */
 	uint64_t *pml4;                     /* Page map level 4 */
