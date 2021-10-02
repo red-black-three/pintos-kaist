@@ -183,7 +183,6 @@ void update_next_tick_to_awake(int64_t ticks);
 
 // 우선순위 비교 함수 선언
 bool thread_compare_priority(struct list_elem *higher, struct list_elem *lower, void *aux UNUSED);
-void preemption_priority(void);
 bool sema_compare_priority(const struct list_elem *higher, const struct list_elem *lower, void *aux UNUSED);
 bool thread_compare_donate_priority(const struct list_elem *higher, const struct list_elem *lower, void *aux UNUSED);
 
@@ -192,3 +191,5 @@ void donate_priority(void);
 void remove_with_lock(struct lock *lock);
 
 void refresh_priority(void);
+
+void test_max_priority(void);
