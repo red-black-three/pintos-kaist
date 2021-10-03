@@ -28,6 +28,10 @@ typedef int tid_t;
 #define PRI_DEFAULT 31                  /* Default priority. */
 #define PRI_MAX 63                      /* Highest priority. */
 
+#define NICE_DEFAULT 0
+#define RECENT_CPU_DEFAULT 0
+#define LOAD_AVG_DEFAULT 0
+
 /* A kernel thread or user process.
  *
  * Each thread structure is stored in its own 4 kB page.  The
@@ -101,6 +105,8 @@ struct thread {
 	/* Shared between thread.c and synch.c. */
 	struct list_elem elem;              /* List element. */
 
+	struct list_elem allelem;
+
 	// 스레드가 현재 얻기 위해 기다리고 있는 lock.
 	// 스레드는 이 lock이 ralease 되기를 기다림
 	struct lock *wait_on_lock;
@@ -112,6 +118,9 @@ struct thread {
 	struct list_elem donation_elem;
 
 	int64_t sleep_ticks;
+
+	int nice;
+	int recent_cpu;
 
 #ifdef USERPROG
 	/* Owned by userprog/process.c. */
@@ -187,3 +196,11 @@ void remove_with_lock(struct lock *lock);
 void refresh_priority(void);
 
 void test_max_priority(void);
+
+void mlfqs_calculate_priority(struct thread *t);
+void mlfqs_calculate_recent_cpu(struct thread *t);
+void mlfqs_calculate_load_avg(void);
+
+void mlfqs_increment_recent_cpu(void);
+void mlfqs_recalculate_recent_cpu(void);
+void mlfqs_recalculate_priority(void);

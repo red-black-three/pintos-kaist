@@ -129,9 +129,20 @@ timer_print_stats (void) {
 /* Timer interrupt handler. */
 
 static void
-timer_interrupt (struct intr_frame *args UNUSED) {  // UNUSED?
+timer_interrupt (struct intr_frame *args UNUSED) {
 	ticks++;
 	thread_tick ();
+
+    if (thread_mlfqs) {
+		mlfqs_increment_recent_cpu();
+		if (ticks % 4 == 0) {
+			mlfqs_recalculate_priority();
+			if (ticks % TIMER_FREQ == 0) {
+				mlfqs_recalculate_recent_cpu();
+				mlfqs_calculate_load_avg();
+			}
+		}
+	}
 
 	// 매 tick마다 sleep queue에서 깨어날 thread가 있는지 확인하여,
 	// 깨우는 함수를 호출하도록 함
