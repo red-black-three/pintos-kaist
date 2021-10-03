@@ -116,7 +116,7 @@ void sema_up (struct semaphore *sema) {
 	test_max_priority();
 	intr_set_level (old_level);
 }
-`
+
 static void sema_test_helper (void *sema_);
 
 /* Self-test for semaphores that makes control "ping-pong"
