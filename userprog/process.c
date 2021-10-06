@@ -160,8 +160,7 @@ error:
 
 /* Switch the current execution context to the f_name.
  * Returns -1 on fail. */
-int
-process_exec (void *f_name) {
+int process_exec (void *f_name) {
 	char *file_name = f_name;
 	bool success;
 
@@ -320,29 +319,47 @@ static bool load_segment (struct file *file, off_t ofs, uint8_t *upage,
  * Stores the executable's entry point into *RIP
  * and its initial stack pointer into *RSP.
  * Returns true if successful, false otherwise. */
-static bool
-load (const char *file_name, struct intr_frame *if_) {
+static bool load (const char *file_name, struct intr_frame *if_) {
 	struct thread *t = thread_current ();
 	struct ELF ehdr;
 	struct file *file = NULL;
 	off_t file_ofs;
 	bool success = false;
 	int i;
+	
+	// for argument parsing
+	char *program_name[48];		// file_name 원본 두고 복사본으로 실행(혹시 원본이 필요한 경우 대비)
+	memcpy(program_name, file_name, strlen(file_name)+1);		// +1? 센티널(\0) 구현 위해
+	
+	char *token;		// 실제 리턴 받을 토큰
+	char *rest;			// 토큰 분리 후 문자열 중 남은 부분
+	int argc = 0;		// 인자 개수
+	char *arg[128];		// 인자 리스트
+	void *rsp;			// 스택 포인터
+	char **argv[128];	// 스택 포인터 주소값
+
+	token = strtok_r(program_name, " ", &rest);
+
+	for (token; token != NULL; token = strtok_r(NULL, " ", &rest)) {
+		arg[argc] = token;
+		argc++;
+	}
 
 	/* Allocate and activate page directory. */
-	t->pml4 = pml4_create ();
+	t->pml4 = pml4_create ();					// 페이지 디렉토리 생성
 	if (t->pml4 == NULL)
 		goto done;
-	process_activate (thread_current ());
+	process_activate (thread_current ());		// 페이지 테이블 활성화
 
 	/* Open executable file. */
-	file = filesys_open (file_name);
+	file = filesys_open (file_name);			// 프로그램 파일 open
 	if (file == NULL) {
 		printf ("load: %s: open failed\n", file_name);
 		goto done;
 	}
 
 	/* Read and verify executable header. */
+	// ELF파일 헤더 정보를 읽어와 저장
 	if (file_read (file, &ehdr, sizeof ehdr) != sizeof ehdr
 			|| memcmp (ehdr.e_ident, "\177ELF\2\1\1", 7)
 			|| ehdr.e_type != 2
@@ -397,7 +414,7 @@ load (const char *file_name, struct intr_frame *if_) {
 						read_bytes = 0;
 						zero_bytes = ROUND_UP (page_offset + phdr.p_memsz, PGSIZE);
 					}
-					if (!load_segment (file, file_page, (void *) mem_page,
+					if (!load_segment (file, file_page, (void *) mem_page,		// 배치 정보를 통해 파일을 메모리에 적재
 								read_bytes, zero_bytes, writable))
 						goto done;
 				}
@@ -416,6 +433,44 @@ load (const char *file_name, struct intr_frame *if_) {
 
 	/* TODO: Your code goes here.
 	 * TODO: Implement argument passing (see project2/argument_passing.html). */
+	rsp = if_->rsp;		// 현재 유저 스택에서 혀재 위치 가리키는 스택 포인터
+
+	// 스택에 데이터 넣기
+	for (int i = argc-1; i >= 0; i--) {
+		int arg_len = strlen(arg[i])+1;
+		rsp -= arg_len;
+		memcpy(rsp, arg[i], arg_len);
+		argv[i] = (uint64_t)rsp;
+	}
+
+	// for insert padding for word-align
+	while ((uint64_t)rsp % 8 != 0) {	// 64bit이기 때문에 8byte 단위로 끊어줌
+		rsp--;							// rsp가 8의 배수가 될 때까지 위치 내려줌
+		*(uint8_t *)rsp = 0;
+	}
+
+	// 문자열+센티널 주소에 추가
+    for (int i = argc; i >= 0; i--) {
+        rsp -= 8;
+        if (i == argc) {
+            memset(rsp, 0, sizeof(char **));
+		}
+        else {
+            memcpy(rsp, &argv[i], sizeof(char **));
+		}
+    }
+    
+    // 0만 존재하는 fake address 입력
+    rsp -= 8;
+    memset(rsp, 0, sizeof(void *));
+ 
+    if_->R.rdi = argc;
+    if_->R.rsi = rsp + 8;	// 첫 인자를 가리키는 주소의 주소
+
+	if_->rsp = rsp;
+	/* Debugging */	
+	printf ("Hey! This is your stack!\n");
+	hex_dump(rsp, rsp, 100, true);
 
 	success = true;
 
