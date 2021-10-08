@@ -8,6 +8,8 @@
 #include "threads/flags.h"
 #include "intrinsic.h"
 
+#include "userprog/process.h"  // process_wait 함수 가져오려면 필요
+
 void syscall_entry (void);
 void syscall_handler (struct intr_frame *);
 
@@ -42,5 +44,28 @@ void
 syscall_handler (struct intr_frame *f UNUSED) {
 	// TODO: Your implementation goes here.
 	printf ("system call!\n");
+
+	switch (f->R.rax)
+	{
+	case SYS_WAIT:
+		f->R.rax = process_wait(f->R.rdi);
+		break;
+
+	case SYS_CREATE:
+	    break;
+
+	case SYS_REMOVE:
+	    break;
+
+	case SYS_OPEN:
+	    break;
+
+	case SYS_CLOSE:
+	    break;
+	
+	default:
+		break;
+	}
+
 	thread_exit ();
 }
