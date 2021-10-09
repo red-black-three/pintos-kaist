@@ -5,6 +5,7 @@
 #include <list.h>
 #include <stdint.h>
 #include "threads/interrupt.h"
+#include "threads/synch.h"
 #ifdef VM
 #include "vm/vm.h"
 #endif
@@ -124,6 +125,25 @@ struct thread {
 	int nice;			// 다른 스레드에 자신의 CPU time 양보하는 정도
 	int recent_cpu;		// 최근에 cpu 얼마나 사용했는지
 
+	// 시스템 콜 위한 변수 추가
+	int exit_status;		// 자식 프로세스의 exit 상태를 부모에게 전달
+	struct file **fd_table;
+	int fd_idx;
+
+	struct intr_frame parent_if;
+	struct semaphore fork_sema;
+
+	struct list child_list;
+	struct list_elem child_elem;
+
+	struct semaphore wait_sema;
+	struct semaphore free_sema;
+
+	struct file *running;
+
+	int stdin_count;
+	int stdout_count;
+
 #ifdef USERPROG
 	/* Owned by userprog/process.c. */
 	uint64_t *pml4;                     /* Page map level 4 */
@@ -172,7 +192,6 @@ int thread_get_load_avg (void);
 
 void do_iret (struct intr_frame *tf);
 
-#endif /* threads/thread.h */
 
 // 스레드를 ticks 시각까지 재우는 함수
 void thread_sleep(int64_t ticks);
@@ -205,3 +224,10 @@ void mlfqs_calculate_load_avg(void);
 void mlfqs_increment_recent_cpu(void);
 void mlfqs_recalculate_recent_cpu(void);
 void mlfqs_recalculate_priority (void);
+
+
+// for system call
+#define FDT_PAGES 3						  // pages to allocate for file descriptor tables (thread_create, process_exit)
+#define FDCOUNT_LIMIT FDT_PAGES *(1 << 9) // Limit fdIdx
+
+#endif /* threads/thread.h */

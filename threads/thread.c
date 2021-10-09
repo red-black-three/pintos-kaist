@@ -262,6 +262,10 @@ tid_t thread_create (const char *name, int priority, thread_func *function, void
 	init_thread (t, name, priority);
 	tid = t->tid = allocate_tid ();
 
+	// 2-3 Parent child
+	struct thread *cur = thread_current();
+	list_push_back(&cur->child_list, &t->child_elem); // [parent] add new child to child_list
+
 	/* Call the kernel_thread if it scheduled.
 	 * Note) rdi is 1st argument, and rsi is 2nd argument. */
 	t->tf.rip = (uintptr_t) kernel_thread;
@@ -510,6 +514,14 @@ static void init_thread (struct thread *t, const char *name, int priority) {
 	// for MLFQS
 	t->nice = NICE_DEFAULT;
   	t->recent_cpu = RECENT_CPU_DEFAULT;
+
+	// for systeam call
+	list_init(&t->child_list);
+	sema_init(&t->wait_sema, 0);
+	sema_init(&t->fork_sema, 0);
+	sema_init(&t->free_sema, 0);
+
+	t->running = NULL;
 }
 
 /* Chooses and returns the next thread to be scheduled.  Should
