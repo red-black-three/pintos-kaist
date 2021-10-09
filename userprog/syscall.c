@@ -30,9 +30,6 @@ void seek(int fd, unsigned position);
 unsigned tell(int fd);
 void close(int fd);
 
-const int STDIN = 1;
-const int STDOUT = 2;
-
 /* System call.
  *
  * Previously system call services was handled by the interrupt handler
@@ -57,11 +54,11 @@ void syscall_init (void) {
 	write_msr(MSR_SYSCALL_MASK,
 			FLAG_IF | FLAG_TF | FLAG_DF | FLAG_IOPL | FLAG_AC | FLAG_NT);
 
-	// lock_init(&filesys_lock);
+	lock_init(&filesys_lock);
 }
 
 /* The main system call interface */
-void syscall_handler (struct intr_frame *f UNUSED) {
+void syscall_handler (struct intr_frame *f) {
 	// TODO: Your implementation goes here.
 	printf ("system call!\n");
 
@@ -122,8 +119,8 @@ void syscall_handler (struct intr_frame *f UNUSED) {
 	// thread_exit ();
 }
 
-// 2-2. Implement system call
-void check_address(const uint64_t *addr)	// 주소값이 유저 영역(0x8048000~0xc0000000)에서 사용하는 주소값인지 확인하는 함수
+// 주소값이 유저 영역(0x8048000~0xc0000000)에서 사용하는 주소값인지 확인하는 함수
+void check_address(const uint64_t *addr)	
 {
 	struct thread *cur = thread_current();
 	if (addr == NULL || !(is_user_vaddr(addr)) || pml4_get_page(cur->pml4, addr) == NULL) {
@@ -131,7 +128,7 @@ void check_address(const uint64_t *addr)	// 주소값이 유저 영역(0x8048000
 	}
 }
 
-// file descriptor 
+// fd로 파일 찾는 함수
 static struct file *find_file_by_fd(int fd) {
 	struct thread *cur = thread_current();
 
@@ -141,14 +138,15 @@ static struct file *find_file_by_fd(int fd) {
 	return cur->fd_table[fd];
 }
 
-// Find open spot in current thread's fdt and put file in it. Returns the fd.
+// 현재 프로세스의 fd테이블에 파일 추가
 int add_file_to_fdt(struct file *file) {
 	struct thread *cur = thread_current();
-	struct file **fdt = cur->fd_table; // file descriptor table
+	struct file **fdt = cur->fd_table;
 
 	// Project2-extra - (multi-oom) Find open spot from the front
-	while (cur->fd_idx < FDCOUNT_LIMIT && fdt[cur->fd_idx])
+	while (cur->fd_idx < FDCOUNT_LIMIT && fdt[cur->fd_idx]) {
 		cur->fd_idx++;
+	}
 
 	// Error - fdt full
 	if (cur->fd_idx >= FDCOUNT_LIMIT)
@@ -158,7 +156,7 @@ int add_file_to_fdt(struct file *file) {
 	return cur->fd_idx;
 }
 
-// Check for valid fd and do cur->fd_table[fd] = NULL. Returns nothing
+// fd테이블에 현재 스레드 제거
 void remove_file_from_fdt(int fd)
 {
 	struct thread *cur = thread_current();
@@ -250,6 +248,7 @@ int filesize(int fd) {
 	return file_length(open_file);
 }
 
+// open된 파일의 사이즈를 읽는 함수
 int read(int fd, void *buffer, unsigned size) {
 	check_address(buffer);
 
@@ -271,6 +270,7 @@ int read(int fd, void *buffer, unsigned size) {
 	return read_result;
 }
 
+// buffer로부터 사이즈 쓰기
 int write(int fd, const void *buffer, unsigned size) {
 	check_address(buffer);
 
@@ -295,7 +295,7 @@ int write(int fd, const void *buffer, unsigned size) {
 // 파일 위치(offset)로 이동하는 함수
 void seek(int fd, unsigned position) {
 	struct file *seek_file = find_file_by_fd(fd);
-	if (seek_file <= 2) {		// 초기값 2로 설정. 0: 표준 입력, 1: 표준 출력, 2: 표준 에러
+	if (seek_file <= 2) {		// 초기값 2로 설정. 0: 표준 입력, 1: 표준 출력
 		return;
 	}
 	seek_file->pos = position;
@@ -316,22 +316,5 @@ void close(int fd) {
 	if (fileobj == NULL) {
 		return;
 	}
-
-	struct thread *cur = thread_current();
-
-	if (fd == 0 || fileobj == STDIN) {
-		cur->stdin_count--;
-	}
-	else if (fd == 1 || fileobj == STDOUT) {
-		cur->stdout_count--;
-	}
-
 	remove_file_from_fdt(fd);
-	if (fd <= 1 || fileobj <= 2)
-		return;
-
-	if (fileobj->dupCount == 0)
-		file_close(fileobj);
-	else
-		fileobj->dupCount--;
 }

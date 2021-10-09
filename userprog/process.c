@@ -27,7 +27,6 @@ static void process_cleanup (void);
 static bool load (const char *file_name, struct intr_frame *if_);
 static void initd (void *f_name);
 static void __do_fork (void *);
-void argument_stack(char **arg, int argc, struct intr_frame *if_);
 
 /* General process initializer for initd and other process. */
 static void
@@ -40,8 +39,7 @@ process_init (void) {
  * before process_create_initd() returns. Returns the initd's
  * thread id, or TID_ERROR if the thread cannot be created.
  * Notice that THIS SHOULD BE CALLED ONCE. */
-tid_t
-process_create_initd (const char *file_name) {
+tid_t process_create_initd (const char *file_name) {
 	char *fn_copy;
 	tid_t tid;
 
@@ -52,9 +50,9 @@ process_create_initd (const char *file_name) {
 		return TID_ERROR;
 	strlcpy (fn_copy, file_name, PGSIZE);
 
-	// Project 2-1. Pass args - extract program name
-	char *save_ptr;
-	strtok_r(file_name, " ", &save_ptr);
+	// // Pass args - extract program name
+	// char *save_ptr;
+	// strtok_r(file_name, " ", &save_ptr);
 
 	/* Create a new thread to execute FILE_NAME. */
 	tid = thread_create (file_name, PRI_DEFAULT, initd, fn_copy);
@@ -80,7 +78,7 @@ initd (void *f_name) {
 /* Clones the current process as `name`. Returns the new process's thread id, or
  * TID_ERROR if the thread cannot be created. */
 tid_t process_fork (const char *name, struct intr_frame *if_) {
-	/* Clone current thread to new thread.*/
+	// 현재 프로세스를 새 프로세스로 복제
 	struct thread *cur = thread_current();
 	memcpy(&cur->parent_if, if_, sizeof(struct intr_frame));		// 자식에게 인터럽트 프레임 전달?
 
@@ -105,8 +103,7 @@ tid_t process_fork (const char *name, struct intr_frame *if_) {
 #ifndef VM
 /* Duplicate the parent's address space by passing this function to the
  * pml4_for_each. This is only for the project 2. */
-static bool
-duplicate_pte (uint64_t *pte, void *va, void *aux) {
+static bool duplicate_pte (uint64_t *pte, void *va, void *aux) {
 	struct thread *current = thread_current ();
 	struct thread *parent = (struct thread *) aux;
 	void *parent_page;
@@ -140,6 +137,14 @@ duplicate_pte (uint64_t *pte, void *va, void *aux) {
 		return false;
 	}
 
+#ifdef DEBUG
+	// page table, virtual address 이해
+	// 'pte' here = address pointing to one page table entry
+	// *pte = page table entry = address of the physical frame
+	void *test = ptov(PTE_ADDR(*pte)) + pg_ofs(va); // should be same as parent_page -> Yes!
+	uint64_t va_offset = pg_ofs(va);				// should be 0; va comes from PTE, so there must be no 12bit physical offset
+#endif
+
 	/* 3. TODO: Allocate new PAL_USER page for the child and set result to
 	 *    TODO: NEWPAGE. */
 	newpage = palloc_get_page(PAL_USER);
@@ -162,6 +167,15 @@ duplicate_pte (uint64_t *pte, void *va, void *aux) {
 		printf("Failed to map user virtual page to given physical frame\n"); // #ifdef DEBUG
 		return false;
 	}
+
+#ifdef DEBUG
+	// TEST) is 'va' correctly mapped to newpage?
+	if (pml4_get_page(current->pml4, va) != newpage)
+		printf("Not mapped!"); // never called
+
+	printf("--Completed copy--\n");
+#endif
+
 	return true;
 }
 #endif
@@ -180,7 +194,7 @@ struct MapElem
 static void __do_fork (void *aux) {
 	struct intr_frame if_;
 	struct thread *parent = (struct thread *) aux;
-	struct thread *current = thread_current ();
+	struct thread *current = thread_current();
 	/* TODO: somehow pass the parent_if. (i.e. process_fork()'s if_) */
 	struct intr_frame *parent_if;
 	bool succ = true;
@@ -280,9 +294,10 @@ error:
 
 /* Switch the current execution context to the f_name.
  * Returns -1 on fail. */
-int process_exec (void *f_name) {
+int process_exec(void *f_name) {
 	char *file_name = f_name;
 	bool success;
+	struct thread *cur = thread_current();
 
 	/* We cannot use the intr_frame in the thread structure.
 	 * This is because when current thread rescheduled,
@@ -293,39 +308,43 @@ int process_exec (void *f_name) {
 	_if.eflags = FLAG_IF | FLAG_MBS;
 
 	/* We first kill the current context */
-	process_cleanup ();
+	process_cleanup();
 
 	// for argument parsing
-	char *program_name[48];		// file_name 원본 두고 복사본으로 실행(혹시 원본이 필요한 경우 대비)
-	memcpy(program_name, file_name, strlen(file_name)+1);		// +1? 센티널(\0) 구현 위해
-	
+	char *argv[64]; 
+	int argc = 0;
+
 	char *token;		// 실제 리턴 받을 토큰
-	char *rest;			// 토큰 분리 후 문자열 중 남은 부분
-	int argc = 0;		// 인자 개수
-	char *arg[128];		// 인자 리스트
-
-	token = strtok_r(program_name, " ", &rest);
-
-	for (token; token != NULL; token = strtok_r(NULL, " ", &rest)) {
-		arg[argc] = token;
+	char *save_ptr;		// 토큰 분리 후 문자열 중 남는 부분
+	token = strtok_r(file_name, " ", &save_ptr);
+	while (token != NULL) {
+		argv[argc] = token;
+		token = strtok_r(NULL, " ", &save_ptr);
 		argc++;
 	}
 
 	/* And then load the binary */
-	success = load (file_name, &_if);
+	success = load(file_name, &_if);
 
+	/* If load failed, quit. */
 	if (!success) {
 		palloc_free_page(file_name);
 		return -1;
 	}
-	argument_stack(arg, argc, &_if);
 
-	/* If load failed, quit. */
-	palloc_free_page (file_name);
+	// 유저스택에 인자 넣기
+	void **rspp = &_if.rsp;
+	argument_stack(argv, argc, rspp);
+	_if.R.rdi = argc;
+	_if.R.rsi = (uint64_t)*rspp + sizeof(void *);
+
+	hex_dump(_if.rsp, _if.rsp, USER_STACK - (uint64_t)*rspp, true); // #ifdef DEBUG
+
+	palloc_free_page(file_name);
 
 	/* Start switched process. */
-	do_iret (&_if);
-	NOT_REACHED ();
+	do_iret(&_if);
+	NOT_REACHED();
 }
 
 
@@ -398,7 +417,7 @@ void process_exit (void) {
 	palloc_free_multiple(cur->fd_table, FDT_PAGES); // multi-oom
 
 	// P2-5 Close current executable run by this process
-	file_close(cur->running);
+	// file_close(cur->running);
 
 	process_cleanup();
 
@@ -530,6 +549,10 @@ static bool load (const char *file_name, struct intr_frame *if_) {
 		goto done;
 	}
 
+	// // Project 2-5. Deny writes to running exec
+	// t->running = file;
+	// file_deny_write(file);
+
 	/* Read and verify executable header. */
 	// ELF파일 헤더 정보를 읽어와 저장
 	if (file_read (file, &ehdr, sizeof ehdr) != sizeof ehdr
@@ -609,7 +632,7 @@ static bool load (const char *file_name, struct intr_frame *if_) {
 
 done:
 	/* We arrive here whether the load is successful or not. */
-	file_close (file);
+	// file_close (file);
 	return success;
 }
 
@@ -826,47 +849,83 @@ setup_stack (struct intr_frame *if_) {
 }
 #endif /* VM */
 
-void argument_stack(char **arg, int argc, struct intr_frame *if_) {
-	void *rsp;			// 스택 포인터
-	char argv[128];
-	rsp = if_->rsp;		// 현재 유저 스택에서 현재 위치 가리키는 스택 포인터
+// void argument_stack(char **arg, int argc, struct intr_frame *if_) {
+// 	void *rsp;			// 스택 포인터
+// 	char argv[128];
+// 	rsp = if_->rsp;		// 현재 유저 스택에서 현재 위치 가리키는 스택 포인터
 
-	// 스택에 데이터 넣기
-	for (int i = argc-1; i >= 0; i--) {
-		int arg_len = strlen(arg[i])+1;
-		rsp -= arg_len;
-		memcpy(rsp, arg[i], arg_len);
-		argv[i] = (uint64_t)rsp;
-	}
+// 	// 스택에 데이터 넣기
+// 	for (int i = argc-1; i >= 0; i--) {
+// 		int arg_len = strlen(arg[i])+1;
+// 		rsp -= arg_len;
+// 		memcpy(rsp, arg[i], arg_len);
+// 		argv[i] = (uint64_t)rsp;
+// 	}
 
-	// for insert padding for word-align
-	while ((uint64_t)rsp % 8 != 0) {	// 64bit이기 때문에 8byte 단위로 끊어줌
-		rsp--;							// rsp가 8의 배수가 될 때까지 위치 내려줌
-		*(uint8_t *)rsp = 0;  // 1byte?
-	}
+// 	// for insert padding for word-align
+// 	while ((uint64_t)rsp % 8 != 0) {	// 64bit이기 때문에 8byte 단위로 끊어줌
+// 		rsp--;							// rsp가 8의 배수가 될 때까지 위치 내려줌
+// 		*(uint8_t *)rsp = 0;  			// 1byte?
+// 	}
 
-	// 문자열+센티널 주소에 추가
-    for (int i = argc; i >= 0; i--) {
-        rsp -= 8;
-        if (i == argc) {
-            memset(rsp, 0, sizeof(char **));
-		}
-        else {
-            memcpy(rsp, &argv[i], sizeof(char **));
-		}
-    }
+// 	// 문자열+센티널 주소에 추가
+//     for (int i = argc-1; i >= 0; i--) {
+//         rsp -= 8;
+//         if (i == argc) {
+//             memset(rsp, 0, sizeof(char **));
+// 		}
+//         else {
+//             memcpy(rsp, &argv[i], sizeof(char **));
+// 		}
+//     }
     
-    // 0만 존재하는 fake address 입력
-    rsp -= 8;
-    memset(rsp, 0, sizeof(void *));
+//     // 0만 존재하는 fake address 입력
+//     rsp -= 8;
+//     memset(rsp, 0, sizeof(void *));
  
-    if_->R.rdi = argc;
-    if_->R.rsi = rsp + 8;	// 첫 인자를 가리키는 주소의 주소
+//     if_->R.rdi = argc;
+//     if_->R.rsi = rsp + 8;	// 첫 인자를 가리키는 주소의 주소
 
-	if_->rsp = rsp;
-	/* Debugging */	
-	printf ("Hey! This is your stack!\n");
-	hex_dump(rsp, rsp, 100, true);
+// 	// if_->rsp = rsp;
+// 	/* Debugging */	
+// 	// printf ("Hey! This is your stack!\n");
+// 	// hex_dump(rsp, rsp, 100, true);
+// }
+
+// Load user stack with arguments
+void argument_stack(char **argv, int argc, void **rsp) {
+	// Save argument strings (character by character)
+	for (int i = argc - 1; i >= 0; i--) {
+		int N = strlen(argv[i]);
+		for (int j = N; j >= 0; j--) {
+			char individual_character = argv[i][j];
+			(*rsp)--;
+			**(char **)rsp = individual_character; // 1 byte
+		}
+		argv[i] = *(char **)rsp; // push this address too
+	}
+
+	// Word-align padding
+	int pad = (int)*rsp % 8;
+	for (int k = 0; k < pad; k++) {
+		(*rsp)--;
+		**(uint8_t **)rsp = (uint8_t)0; // 1 byte
+	}
+
+	// Pointers to the argument strings
+	size_t PTR_SIZE = sizeof(char *);
+
+	(*rsp) -= PTR_SIZE;
+	**(char ***)rsp = (char *)0;
+
+	for (int i = argc - 1; i >= 0; i--) {
+		(*rsp) -= PTR_SIZE;
+		**(char ***)rsp = argv[i];
+	}
+
+	// Return address
+	(*rsp) -= PTR_SIZE;
+	**(void ***)rsp = (void *)0;
 }
 
 // Search current thread's child_list and return child with pid. Return NULL if not found.
