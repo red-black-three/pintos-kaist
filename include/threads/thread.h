@@ -126,9 +126,9 @@ struct thread {
 	int recent_cpu;		// 최근에 cpu 얼마나 사용했는지
 
 	// 시스템 콜 위한 변수 추가
-	int exit_status;		// 자식 프로세스의 exit 상태를 부모에게 전달
-	struct file **fd_table;
-	int fd_idx;
+	int exit_status;				// 자식 프로세스의 exit 상태를 부모에게 전달
+	struct file **fd_table;			// thread_create에서 할당
+	int fd_idx;						// fd테이블에 open spot의 인덱스
 
 	struct intr_frame parent_if;
 	struct semaphore fork_sema;
@@ -140,9 +140,6 @@ struct thread {
 	struct semaphore free_sema;
 
 	struct file *running;
-
-	int stdin_count;
-	int stdout_count;
 
 #ifdef USERPROG
 	/* Owned by userprog/process.c. */

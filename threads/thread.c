@@ -262,7 +262,15 @@ tid_t thread_create (const char *name, int priority, thread_func *function, void
 	init_thread (t, name, priority);
 	tid = t->tid = allocate_tid ();
 
-	// 2-3 Parent child
+	//t->fd_table = palloc_get_page(PAL_ZERO); // multi-oom : need more pages to accomodate 10 stacks of 126 opens
+	t->fd_table = palloc_get_multiple(PAL_ZERO, FDT_PAGES);
+	if (t->fd_table == NULL)
+		return TID_ERROR;
+	t->fd_idx = 2; 			// 0 : stdin, 1 : stdout
+	t->fd_table[0] = 1; 	// dummy values to distinguish fd 0 and 1 from NULL
+	t->fd_table[1] = 2;
+
+	// Parent child
 	struct thread *cur = thread_current();
 	list_push_back(&cur->child_list, &t->child_elem); // [parent] add new child to child_list
 
@@ -521,7 +529,7 @@ static void init_thread (struct thread *t, const char *name, int priority) {
 	sema_init(&t->fork_sema, 0);
 	sema_init(&t->free_sema, 0);
 
-	t->running = NULL;
+	// t->running = NULL;
 }
 
 /* Chooses and returns the next thread to be scheduled.  Should

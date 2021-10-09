@@ -10,6 +10,7 @@ int process_wait (tid_t);
 void process_exit (void);
 void process_activate (struct thread *next);
 
+void argument_stack(char **argv, int argc, void **rspp);
 struct thread *get_child_with_pid(int pid);
 
 #endif /* userprog/process.h */
