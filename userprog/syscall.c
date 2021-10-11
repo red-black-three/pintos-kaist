@@ -10,14 +10,20 @@
 
 #include "userprog/process.h"  // process_wait 함수 가져오려면 필요
 #include "filesys/filesys.h"  // filesys_create 함수 가져오려면 필요
+#include "threads/palloc.h"  // palloc 관련 함수 가져오려면 필요
+#include "filesys/file.h"  // file 관련 함수 가져오려면 필요
 
 void syscall_entry (void);
 void syscall_handler (struct intr_frame *);
 
+void halt(void);
 void exit(int status);
+tid_t fork(const char *thread_name, struct intr_frame *f);
+int exec(char *file_name);
 bool create(const char *file, unsigned initial_size);
 bool remove(const char *file);
 int open(const char *file);
+int filesize(int fd);
 void close(int fd);
 
 /* System call.
@@ -60,6 +66,13 @@ syscall_handler (struct intr_frame *f UNUSED) {
     case SYS_EXIT:
 	    exit(f->R.rdi);
 		break;
+	case SYS_FORK:
+	    f->R.rax = fork(f->R.rdi, f);
+		break;
+	case SYS_EXEC:
+	    if (exec(f->R.rdi) == -1)
+		    exit(-1);
+		break;
 	case SYS_WAIT:
 		f->R.rax = process_wait(f->R.rdi);
 		break;
@@ -72,6 +85,9 @@ syscall_handler (struct intr_frame *f UNUSED) {
 	case SYS_OPEN:
 	    f->R.rax = open(f->R.rdi);
 	    break;
+	case SYS_FILESIZE:
+	    f->R.rax = filesize(f->R.rdi);
+		break;
 	case SYS_CLOSE:
 	    close(f->R.rdi);
 	    break;
@@ -79,7 +95,7 @@ syscall_handler (struct intr_frame *f UNUSED) {
 		break;
 	}
 
-	thread_exit ();
+	// thread_exit ();
 }
 
 // Terminates Pintos by calling power_off(). No return.
@@ -97,6 +113,12 @@ void exit(int status)
 	thread_exit();
 }
 
+// (parent) Returns pid of child on success or -1 on fail
+// (child) Returns 0
+tid_t fork(const char *thread_name, struct intr_frame *f) {
+	return process_fork(thread_name, f);
+}
+
 // 다음 상황이면 바로 종료
 // 1. Null pointer
 // 2. A pointer to kernel virtual address space (above KERN_BASE)
@@ -106,6 +128,30 @@ void check_address(const uint64_t *uaddr) {
 	if (uaddr == NULL || !(is_user_vaddr(uaddr)) || pml4_get_page(cur->pml4, uaddr) == NULL) {
 		exit(-1);
 	}
+}
+
+// Run new 'executable' from current process
+// Don't confuse with open! 'open' just opens up any file(txt, excutable),
+// 'exec' runs only executable
+// Never returns on success. Returns -1 on fail.
+int exec(char *file_name) {
+    struct thread *cur = thread_current();
+	check_address(file_name);
+
+	// process_exec의 process_cleanup 때문에 f->R.rdi 날아감.
+	// file_name 동적할당해서 복사한 뒤, 그걸 넘겨주기
+	int siz = strlen(file_name) + 1;
+	char *fn_copy = palloc_get_page(PAL_ZERO);
+	if (fn_copy == NULL)
+	    exit(-1);
+	strlcpy(fn_copy, file_name, siz);
+
+	if (process_exec(fn_copy) == -1)
+	    return -1;
+
+	// Not reachable
+	NOT_REACHED();
+	return 0;
 }
 
 // unsigned = unsigned int
@@ -161,6 +207,14 @@ static struct file *find_file_by_fd(int fd) {
 	    return NULL;
 	
 	return cur->fdTable[fd];  // automatically returns NULL if empty
+}
+
+// Returns the size, in bytes, of the file open as fd.
+int filesize(int fd) {
+	struct file *fileobj = find_file_by_fd(fd);
+	if (fileobj == NULL)
+	    return -1;
+	return file_length(fileobj);
 }
 
 void remove_file_from_fdt(int fd) {

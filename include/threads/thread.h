@@ -136,6 +136,12 @@ struct thread {
 	struct file **fdTable;  // allocation in thread_create (thread.c)
 	int fdIdx;  // an index of an open spot in fdTable
 
+	// fork syscall
+    // to preserve my current intr_frame and pass it down to child in fork ('parent_if' in child's perspective)
+	struct intr_frame parent_if;
+	// parent wait (process_wait) until child fork completes (__do_fork)
+	struct semaphore fork_sema;
+
 #ifdef USERPROG
 	/* Owned by userprog/process.c. */
 	uint64_t *pml4;                     /* Page map level 4 */
