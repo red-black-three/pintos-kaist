@@ -50,9 +50,9 @@ tid_t process_create_initd (const char *file_name) {
 		return TID_ERROR;
 	strlcpy (fn_copy, file_name, PGSIZE);
 
-	// // Pass args - extract program name
-	// char *save_ptr;
-	// strtok_r(file_name, " ", &save_ptr);
+	// args-single, args-multiple, args-many, args-dbl-space 부분 통과 위해 
+	char *save_ptr;
+	strtok_r(file_name, " ", &save_ptr);
 
 	/* Create a new thread to execute FILE_NAME. */
 	tid = thread_create (file_name, PRI_DEFAULT, initd, fn_copy);
@@ -111,23 +111,23 @@ static bool duplicate_pte (uint64_t *pte, void *va, void *aux) {
 	bool writable;
 
 	/* 1. TODO: If the parent_page is kernel page, then return immediately. */
-	if (is_kernel_vaddr(va))
-	{
-#ifdef DEBUG
-		//printf("[fork-duplicate] fail at step 1 %llx\n", va);
-#endif
-		return true; // return false ends pml4_for_each, which is undesirable - just return true to pass this kernel va
-	}
-	else
-	{
-#ifdef DEBUG
-		printf("[fork-duplicate] pass at step 1 %llx\n", va);
-#endif
-	}
+// 	if (is_kernel_vaddr(va))
+// 	{
+// #ifdef DEBUG
+// 		//printf("[fork-duplicate] fail at step 1 %llx\n", va);
+// #endif
+// 		return true; // return false ends pml4_for_each, which is undesirable - just return true to pass this kernel va
+// 	}
+// 	else
+// 	{
+// #ifdef DEBUG
+// 		printf("[fork-duplicate] pass at step 1 %llx\n", va);
+// #endif
+// 	}
 
-#ifdef DEBUG
-	printf("Is user %d, is kernel %d, writable %d\n", is_user_pte(pte), is_kern_pte(pte), is_writable(pte));
-#endif
+// #ifdef DEBUG
+// 	printf("Is user %d, is kernel %d, writable %d\n", is_user_pte(pte), is_kern_pte(pte), is_writable(pte));
+// #endif
 
 	/* 2. Resolve VA from the parent's page map level 4. */
 	parent_page = pml4_get_page (parent->pml4, va);
@@ -137,28 +137,28 @@ static bool duplicate_pte (uint64_t *pte, void *va, void *aux) {
 		return false;
 	}
 
-#ifdef DEBUG
-	// page table, virtual address 이해
-	// 'pte' here = address pointing to one page table entry
-	// *pte = page table entry = address of the physical frame
-	void *test = ptov(PTE_ADDR(*pte)) + pg_ofs(va); // should be same as parent_page -> Yes!
-	uint64_t va_offset = pg_ofs(va);				// should be 0; va comes from PTE, so there must be no 12bit physical offset
-#endif
+// #ifdef DEBUG
+// 	// page table, virtual address 이해
+// 	// 'pte' here = address pointing to one page table entry
+// 	// *pte = page table entry = address of the physical frame
+// 	void *test = ptov(PTE_ADDR(*pte)) + pg_ofs(va); // should be same as parent_page -> Yes!
+// 	uint64_t va_offset = pg_ofs(va);				// should be 0; va comes from PTE, so there must be no 12bit physical offset
+// #endif
 
 	/* 3. TODO: Allocate new PAL_USER page for the child and set result to
 	 *    TODO: NEWPAGE. */
-	newpage = palloc_get_page(PAL_USER);
-	if (newpage == NULL)
-	{
-		printf("[fork-duplicate] failed to palloc new page\n"); // #ifdef DEBUG
-		return false;
-	}
+	// newpage = palloc_get_page(PAL_USER);
+	// if (newpage == NULL)
+	// {
+	// 	printf("[fork-duplicate] failed to palloc new page\n"); // #ifdef DEBUG
+	// 	return false;
+	// }
 
 	/* 4. TODO: Duplicate parent's page to the new page and
 	 *    TODO: check whether parent's page is writable or not (set WRITABLE
 	 *    TODO: according to the result). */
-	memcpy(newpage, parent_page, PGSIZE);
-	writable = is_writable(pte); // *PTE is an address that points to parent_page
+	// memcpy(newpage, parent_page, PGSIZE);
+	// writable = is_writable(pte); // *PTE is an address that points to parent_page
 
 	/* 5. Add new page to child's page table at address VA with WRITABLE
 	 *    permission. */
@@ -168,13 +168,13 @@ static bool duplicate_pte (uint64_t *pte, void *va, void *aux) {
 		return false;
 	}
 
-#ifdef DEBUG
-	// TEST) is 'va' correctly mapped to newpage?
-	if (pml4_get_page(current->pml4, va) != newpage)
-		printf("Not mapped!"); // never called
+// #ifdef DEBUG
+// 	// TEST) is 'va' correctly mapped to newpage?
+// 	if (pml4_get_page(current->pml4, va) != newpage)
+// 		printf("Not mapped!"); // never called
 
-	printf("--Completed copy--\n");
-#endif
+// 	printf("--Completed copy--\n");
+// #endif
 
 	return true;
 }
@@ -235,45 +235,45 @@ static void __do_fork (void *aux) {
 
 	// Project2-extra) multiple fds sharing same file - use associative map (e.g. dict, hashmap) to duplicate these relationships
 	// other test-cases like multi-oom don't need this feature
-	const int MAPLEN = 10;
-	struct MapElem map[10]; // key - parent's struct file * , value - child's newly created struct file *
-	int dupCount = 0;		// index for filling map
+	// const int MAPLEN = 10;
+	// struct MapElem map[10]; // key - parent's struct file * , value - child's newly created struct file *
+	// int dupCount = 0;		// index for filling map
 
-	for (int i = 0; i < FDCOUNT_LIMIT; i++)
-	{
-		struct file *file = parent->fd_table[i];
-		if (file == NULL)
-			continue;
+	// for (int i = 0; i < FDCOUNT_LIMIT; i++)
+	// {
+	// 	struct file *file = parent->fd_table[i];
+	// 	if (file == NULL)
+	// 		continue;
 
-		// Project2-extra) linear search on key-pair array
-		// If 'file' is already duplicated in child, don't duplicate again but share it
-		bool found = false;
-		for (int j = 0; j < MAPLEN; j++)
-		{
-			if (map[j].key == file)
-			{
-				found = true;
-				current->fd_table[i] = map[j].value;
-				break;
-			}
-		}
-		if (!found)
-		{
-			struct file *new_file;
-			if (file > 2)
-				new_file = file_duplicate(file);
-			else
-				new_file = file; // 1 STDIN, 2 STDOUT
+	// 	// Project2-extra) linear search on key-pair array
+	// 	// If 'file' is already duplicated in child, don't duplicate again but share it
+	// 	bool found = false;
+	// 	for (int j = 0; j < MAPLEN; j++)
+	// 	{
+	// 		if (map[j].key == file)
+	// 		{
+	// 			found = true;
+	// 			current->fd_table[i] = map[j].value;
+	// 			break;
+	// 		}
+	// 	}
+	// 	if (!found)
+	// 	{
+	// 		struct file *new_file;
+	// 		if (file > 2)
+	// 			new_file = file_duplicate(file);
+	// 		else
+	// 			new_file = file; // 1 STDIN, 2 STDOUT
 
-			current->fd_table[i] = new_file;
-			if (dupCount < MAPLEN)
-			{
-				map[dupCount].key = file;
-				map[dupCount++].value = new_file;
-			}
-		}
-	}
-	current->fd_idx = parent->fd_idx;
+	// 		current->fd_table[i] = new_file;
+	// 		if (dupCount < MAPLEN)
+	// 		{
+	// 			map[dupCount].key = file;
+	// 			map[dupCount++].value = new_file;
+	// 		}
+	// 	}
+	// }
+	// current->fd_idx = parent->fd_idx;
 
 #ifdef DEBUG
 	printf("[do_fork] %s Ready to switch!\n", current->name);
@@ -311,8 +311,8 @@ int process_exec(void *f_name) {
 	process_cleanup();
 
 	// for argument parsing
-	char *argv[64]; 
-	int argc = 0;
+	char *argv[64]; 	// 인자 배열
+	int argc = 0;		// 인자 개수
 
 	char *token;		// 실제 리턴 받을 토큰
 	char *save_ptr;		// 토큰 분리 후 문자열 중 남는 부분
@@ -338,7 +338,7 @@ int process_exec(void *f_name) {
 	_if.R.rdi = argc;
 	_if.R.rsi = (uint64_t)*rspp + sizeof(void *);
 
-	hex_dump(_if.rsp, _if.rsp, USER_STACK - (uint64_t)*rspp, true); // #ifdef DEBUG
+	// hex_dump(_if.rsp, _if.rsp, USER_STACK - (uint64_t)*rspp, true);
 
 	palloc_free_page(file_name);
 
@@ -896,36 +896,34 @@ setup_stack (struct intr_frame *if_) {
 void argument_stack(char **argv, int argc, void **rsp) {
 	// Save argument strings (character by character)
 	for (int i = argc - 1; i >= 0; i--) {
-		int N = strlen(argv[i]);
-		for (int j = N; j >= 0; j--) {
-			char individual_character = argv[i][j];
+		int argv_len = strlen(argv[i]);
+		for (int j = argv_len; j >= 0; j--) {
+			char argv_char = argv[i][j];
 			(*rsp)--;
-			**(char **)rsp = individual_character; // 1 byte
+			**(char **)rsp = argv_char; // 1 byte
 		}
-		argv[i] = *(char **)rsp; // push this address too
+		argv[i] = *(char **)rsp; 		// 리스트에 rsp 주소 넣기
 	}
 
 	// Word-align padding
 	int pad = (int)*rsp % 8;
 	for (int k = 0; k < pad; k++) {
 		(*rsp)--;
-		**(uint8_t **)rsp = (uint8_t)0; // 1 byte
+		**(uint8_t **)rsp = 0;
 	}
 
 	// Pointers to the argument strings
-	size_t PTR_SIZE = sizeof(char *);
-
-	(*rsp) -= PTR_SIZE;
-	**(char ***)rsp = (char *)0;
+	(*rsp) -= 8;
+	**(char ***)rsp = 0;
 
 	for (int i = argc - 1; i >= 0; i--) {
-		(*rsp) -= PTR_SIZE;
+		(*rsp) -= 8;
 		**(char ***)rsp = argv[i];
 	}
 
 	// Return address
-	(*rsp) -= PTR_SIZE;
-	**(void ***)rsp = (void *)0;
+	(*rsp) -= 8;
+	**(void ***)rsp = 0;
 }
 
 // Search current thread's child_list and return child with pid. Return NULL if not found.

@@ -60,7 +60,7 @@ void syscall_init (void) {
 /* The main system call interface */
 void syscall_handler (struct intr_frame *f) {
 	// TODO: Your implementation goes here.
-	printf ("system call!\n");
+	// printf ("system call!\n");
 
 	char *fn_copy;
 
@@ -77,6 +77,7 @@ void syscall_handler (struct intr_frame *f) {
 			break;
 		case SYS_FORK:
 			f->R.rax = fork(f->R.rdi, f);
+			break;
 		case SYS_EXEC:
 			if (exec(f->R.rdi) == -1) {
 				exit(-1);
@@ -109,9 +110,9 @@ void syscall_handler (struct intr_frame *f) {
 		case SYS_TELL:
 			f->R.rax = tell(f->R.rdi);
 			break;
-		// case SYS_CLOSE:
-		// 	close(f->R.rdi);
-		// 	break;
+		case SYS_CLOSE:
+			close(f->R.rdi);
+			break;
 		default:
 			exit(-1);
 			break;
