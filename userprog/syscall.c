@@ -29,6 +29,7 @@ int write(int fd, const void *buffer, unsigned size);
 void seek(int fd, unsigned position);
 unsigned tell(int fd);
 void close(int fd);
+int dup2(int oldfd, int newfd);
 
 /* System call.
  *
@@ -112,6 +113,9 @@ void syscall_handler (struct intr_frame *f) {
 			break;
 		case SYS_CLOSE:
 			close(f->R.rdi);
+			break;
+		case SYS_DUP2:
+			f->R.rax = dup2(f->R.rdi, f->R.rsi);
 			break;
 		default:
 			exit(-1);
@@ -255,20 +259,23 @@ int read(int fd, void *buffer, unsigned size) {
 	check_address(buffer);
 
 	int read_result;
+	struct thread *cur = thread_current();
+	struct file *file_fd = find_file_by_fd(fd);
 
-	lock_acquire(&filesys_lock);
 	if (fd == 0) {
-		read_result = input_getc();		// 키보드로 입력 받은 문자를 반환하는 함수
+		*(char *)buffer = input_getc();		// 키보드로 입력 받은 문자를 반환하는 함수
+		read_result = size;
 	}
 	else {
 		if (find_file_by_fd(fd) == NULL) {
 			return -1;
 		}
 		else {
+			lock_acquire(&filesys_lock);
 			read_result = file_read(find_file_by_fd(fd), buffer, size);
+			lock_release(&filesys_lock);
 		}
 	}
-	lock_release(&filesys_lock);
 	return read_result;
 }
 
@@ -319,4 +326,23 @@ void close(int fd) {
 		return;
 	}
 	remove_file_from_fdt(fd);
+}
+
+// dup2함수: 식별자 테이블 엔트리의 이전 내용을 덮어써서 식별자 테이블 엔트리 oldfd를 newfd로 복사
+int dup2(int oldfd, int newfd) {
+	struct file *file_fd = find_file_by_fd(oldfd);
+	struct thread *cur = thread_current();
+	struct file **fdt = cur->fd_table;
+
+	if (file_fd == NULL) {
+		return -1;
+	}
+
+	if (oldfd == newfd) {
+		return newfd;		// oldfd == newfd 이면 복제하지 않고 newfd 리턴
+	}
+
+	close(newfd);
+	fdt[newfd] = file_fd;
+	return newfd;
 }
