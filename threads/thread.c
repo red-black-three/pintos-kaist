@@ -261,6 +261,8 @@ tid_t thread_create (const char *name, int priority, thread_func *function, void
 	if (t->fdTable == NULL)
 	    return TID_ERROR;
 	t->fdIdx = 2;  // 0: stdin, 1: stdout
+	t->fdTable[0] = 1;  // dummy values to distinguish fd 0 and 1 from NULL
+	t->fdTable[1] = 2;
 	tid = t->tid = allocate_tid ();
 
 	// PJT2  부모 스레드의 자식 리스트에 지금 만드는 스레드(자식) 추가

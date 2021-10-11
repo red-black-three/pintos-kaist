@@ -12,9 +12,13 @@
 #include "filesys/filesys.h"  // filesys_create 함수 가져오려면 필요
 #include "threads/palloc.h"  // palloc 관련 함수 가져오려면 필요
 #include "filesys/file.h"  // file 관련 함수 가져오려면 필요
+#include "devices/input.h"  // input 관련 함수 가져오려면 필요
 
 void syscall_entry (void);
 void syscall_handler (struct intr_frame *);
+
+const int STDIN = 1;
+const int STDOUT = 2;
 
 void halt(void);
 void exit(int status);
@@ -24,6 +28,7 @@ bool create(const char *file, unsigned initial_size);
 bool remove(const char *file);
 int open(const char *file);
 int filesize(int fd);
+int read(int fd, void *buffer, unsigned size);
 void close(int fd);
 
 /* System call.
@@ -87,6 +92,9 @@ syscall_handler (struct intr_frame *f UNUSED) {
 	    break;
 	case SYS_FILESIZE:
 	    f->R.rax = filesize(f->R.rdi);
+		break;
+	case SYS_READ:
+	    f->R.rax = read(f->R.rdi, f->R.rsi, f->R.rdx);
 		break;
 	case SYS_CLOSE:
 	    close(f->R.rdi);
@@ -215,6 +223,36 @@ int filesize(int fd) {
 	if (fileobj == NULL)
 	    return -1;
 	return file_length(fileobj);
+}
+
+// Reads size bytes from the file open as fd into buffer.
+// Returns the number of bytes acually read (0 at end of file), or -1 if the file could not be read
+int read(int fd, void *buffer, unsigned size) {
+	check_address(buffer);
+	int ret;
+	
+	struct file *fileobj = find_file_by_fd(fd);
+	if (fileobj == NULL)
+	    return -1;
+
+    if (fileobj == STDIN) {
+		int i;
+		unsigned char *buf = buffer;
+		for (i = 0; i < size; i++) {
+			char c = input_getc();
+			*buf++ = c;
+			if (c == '\0')
+				break;
+		}
+		ret = i;
+	} else if (fileobj == STDOUT) {
+		ret = -1;
+	} else {
+		lock_acquire(&file_rw_lock);
+		ret = file_read(fileobj, buffer, size);
+		lock_release(&file_rw_lock);
+	}
+	return ret;
 }
 
 void remove_file_from_fdt(int fd) {
