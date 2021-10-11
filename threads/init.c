@@ -244,6 +244,8 @@ run_task (char **argv) {
 	if (thread_tests){
 		run_test (task);
 	} else {
+		struct thread *cur = thread_current();
+
 		process_wait (process_create_initd (task));
 	}
 #else

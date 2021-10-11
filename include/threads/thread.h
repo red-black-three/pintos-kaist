@@ -4,6 +4,7 @@
 #include <debug.h>
 #include <list.h>
 #include <stdint.h>
+#include "threads/synch.h"  // PJT2 sema 함수 참조하기 위해 추가
 #include "threads/interrupt.h"
 #ifdef VM
 #include "vm/vm.h"
@@ -122,6 +123,19 @@ struct thread {
 	int nice;
 	int recent_cpu;
 
+    // PJT2
+	struct list child_list;  // 자식 리스트
+	struct list_elem child_elem;  // 자식 리스트 element
+	struct semaphore wait_sema;  // used by parent to wait for child
+	int exit_status;  // used to deliver child's exit_status to parent
+
+	// postpone child termination until parent receives its exit_status in 'wait' (process_wait)
+	struct semaphore free_sema;
+
+	// file descriptor
+	struct file **fdTable;  // allocation in thread_create (thread.c)
+	int fdIdx;  // an index of an open spot in fdTable
+
 #ifdef USERPROG
 	/* Owned by userprog/process.c. */
 	uint64_t *pml4;                     /* Page map level 4 */
@@ -170,7 +184,7 @@ int thread_get_load_avg (void);
 
 void do_iret (struct intr_frame *tf);
 
-#endif /* threads/thread.h */
+#endif
 
 // 스레드를 ticks 시각까지 재우는 함수
 void thread_sleep(int64_t ticks);
@@ -204,3 +218,7 @@ void mlfqs_calculate_load_avg(void);
 void mlfqs_increment_recent_cpu(void);
 void mlfqs_recalculate_recent_cpu(void);
 void mlfqs_recalculate_priority(void);
+
+// PJT2
+#define FDT_PAGES 3
+#define FDCOUNT_LIMIT FDT_PAGES * (1 << 9)  // Limit fdIdx

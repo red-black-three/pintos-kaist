@@ -21,20 +21,20 @@ typedef int off_t;
 #define EXIT_FAILURE 1          /* Unsuccessful execution. */
 
 /* Projects 2 and later. */
-void halt (void) NO_RETURN;
-void exit (int status) NO_RETURN;
-pid_t fork (const char *thread_name);
-int exec (const char *file);
-int wait (pid_t);
-bool create (const char *file, unsigned initial_size);
-bool remove (const char *file);
-int open (const char *file);
-int filesize (int fd);
-int read (int fd, void *buffer, unsigned length);
-int write (int fd, const void *buffer, unsigned length);
-void seek (int fd, unsigned position);
-unsigned tell (int fd);
-void close (int fd);
+void halt (void) NO_RETURN;  // A
+void exit (int status) NO_RETURN;  // A
+pid_t fork (const char *thread_name);  ///// A
+int exec (const char *file);  //// A
+int wait (pid_t);  /// B
+bool create (const char *file, unsigned initial_size);  /// B
+bool remove (const char *file);  /// B
+int open (const char *file);  /// B
+int filesize (int fd);  /// C
+int read (int fd, void *buffer, unsigned length);  //// C
+int write (int fd, const void *buffer, unsigned length);  ///// C
+void seek (int fd, unsigned position);  /// C
+unsigned tell (int fd);  /// C
+void close (int fd);  /// B
 
 int dup2(int oldfd, int newfd);
 

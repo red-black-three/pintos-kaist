@@ -127,7 +127,6 @@ void thread_init (void) {
 	initial_thread->tid = allocate_tid ();
 }
 
-// 가장 먼저 일어나야 할 스레드가 일어날 시각 반환
 void update_next_tick_to_awake(int64_t ticks) {
 	// next_tick_to_awake 변수가 깨워야 하는 스레드의 깨어날 tick 값 중 가장 작은 tick
 	// 갖도록 업데이트
@@ -258,7 +257,15 @@ tid_t thread_create (const char *name, int priority, thread_func *function, void
 
 	/* Initialize thread. */
 	init_thread (t, name, priority);
+	t->fdTable = palloc_get_multiple(PAL_ZERO, FDT_PAGES);
+	if (t->fdTable == NULL)
+	    return TID_ERROR;
+	t->fdIdx = 2;  // 0: stdin, 1: stdout
 	tid = t->tid = allocate_tid ();
+
+	// PJT2  부모 스레드의 자식 리스트에 지금 만드는 스레드(자식) 추가
+	struct thread *cur = thread_current();
+	list_push_back(&cur->child_list, &t->child_elem);
 
 	/* Call the kernel_thread if it scheduled.
 	 * Note) rdi is 1st argument, and rsi is 2nd argument. */
@@ -518,6 +525,11 @@ static void init_thread (struct thread *t, const char *name, int priority) {
 
 	t->nice = NICE_DEFAULT;
 	t->recent_cpu = RECENT_CPU_DEFAULT;
+
+	// PJT2
+	list_init(&t->child_list);
+	sema_init(&t->wait_sema, 0);
+	sema_init(&t->free_sema, 0);
 }
 
 /* Chooses and returns the next thread to be scheduled.  Should

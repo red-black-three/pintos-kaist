@@ -27,6 +27,8 @@ static bool load (const char *file_name, struct intr_frame *if_);
 static void initd (void *f_name);
 static void __do_fork (void *);
 
+struct thread *get_child_with_pid(int pid);
+
 /* General process initializer for initd and other process. */
 static void
 process_init (void) {
@@ -199,24 +201,49 @@ process_exec (void *f_name) {
  *
  * This function will be implemented in problem 2-2.  For now, it
  * does nothing. */
-int
+// 흔히 쓰는 wait(NULL): 모든 자식 프로세스가 종료될 때까지 대기
+// pintos의 wait는 리눅스의 waitpid와 비슷한듯 (특정 프로세스를 기다림)
+int  // 자식 프로세스가 종료될 때까지 부모 프로세스 대기
 process_wait (tid_t child_tid UNUSED) {
 	/* XXX: Hint) The pintos exit if process_wait (initd), we recommend you
 	 * XXX:       to add infinite loop here before
 	 * XXX:       implementing the process_wait. */
-	return -1;
+	struct thread *cur = thread_current();
+	// printf("11111111111111 cur tid: %d \n", cur->tid); -> 1
+	// printf("2222222222222 child_tid: %d\n", child_tid); -> 3
+
+	struct thread *child = get_child_with_pid(child_tid);
+
+	if (child == NULL)
+	    return -1;
+
+    // Parent waits until child signals (sema_up) after its execution
+	sema_down(&child->wait_sema);
+
+	int exit_status = child->exit_status;
+
+	list_remove(&child->child_elem);
+	sema_up(&child->free_sema);  // wake-up child in process_exit
+
+	// for (int i = 0; i < 100000000; i++);
+	return exit_status;
 }
 
 /* Exit the process. This function is called by thread_exit (). */
 void
 process_exit (void) {
-	struct thread *curr = thread_current ();
+	struct thread *cur = thread_current ();
 	/* TODO: Your code goes here.
 	 * TODO: Implement process termination message (see
 	 * TODO: project2/process_termination.html).
 	 * TODO: We recommend you to implement process resource cleanup here. */
 
 	process_cleanup ();
+
+	// Wake up blocked parent
+	sema_up(&cur->wait_sema);
+	// Postpone child termination until parents receives its exit status with 'wait'
+	sema_down(&cur->free_sema);
 }
 
 /* Free the current process's resources. */
@@ -329,6 +356,15 @@ load (const char *file_name, struct intr_frame *if_) {
 	bool success = false;
 	int i;
 
+	char *token, *save_ptr, *arg[128], **argv[100];  // 합쳐서 256이면 패닉
+	int argc = 0;
+	void *rsp;
+
+	for (token = strtok_r(file_name, " ", &save_ptr); token != NULL; token = strtok_r(NULL, " ", &save_ptr)) {
+		arg[argc] = token + '\0';
+		argc++;
+	}
+
 	/* Allocate and activate page directory. */
 	t->pml4 = pml4_create ();
 	if (t->pml4 == NULL)
@@ -416,6 +452,41 @@ load (const char *file_name, struct intr_frame *if_) {
 
 	/* TODO: Your code goes here.
 	 * TODO: Implement argument passing (see project2/argument_passing.html). */
+
+	rsp = if_->rsp;
+
+	// Push data into stack
+	for (int i = argc - 1; i >= 0; i--) {
+		rsp -= strlen(arg[i]) + 1;
+		memcpy(rsp, arg[i], strlen(arg[i]) + 1);
+		argv[i] = (uint64_t)rsp;
+	}
+
+	// Word-align
+	while ((uint64_t)rsp % 8 != 0) {
+		rsp -= 1;
+		*(uint8_t *)rsp = 0;
+	}
+
+	rsp -= 8;
+	*(uint64_t *)rsp = NULL;  // NULL = 0?
+    
+	// Push data pointer into stack, in order
+	for (int i = argc - 1; i >= 0; i--) {
+		rsp -= 8;
+		*(uint64_t *)rsp = argv[i];
+	}
+
+	if_->R.rdi = argc;
+	if_->R.rsi = rsp;
+    
+	// Push a fake return address
+	rsp -= 8;
+	*(uint64_t *)rsp = 0;
+
+	if_->rsp = rsp;
+	
+	// hex_dump(if_->rsp, if_->rsp, USER_STACK - if_->rsp, true);
 
 	success = true;
 
@@ -637,3 +708,15 @@ setup_stack (struct intr_frame *if_) {
 	return success;
 }
 #endif /* VM */
+
+struct thread *get_child_with_pid(int pid) {
+	struct thread *cur = thread_current();
+	struct list *child_list = &cur->child_list;
+
+	for (struct list_elem *e = list_begin(child_list); e != list_end(child_list); e = list_next(e)) {
+		struct thread *t = list_entry(e, struct thread, child_elem);
+		if (t->tid == pid)
+		    return t;
+	}
+	return NULL;
+}

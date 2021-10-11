@@ -9,9 +9,16 @@
 #include "intrinsic.h"
 
 #include "userprog/process.h"  // process_wait 함수 가져오려면 필요
+#include "filesys/filesys.h"  // filesys_create 함수 가져오려면 필요
 
 void syscall_entry (void);
 void syscall_handler (struct intr_frame *);
+
+void exit(int status);
+bool create(const char *file, unsigned initial_size);
+bool remove(const char *file);
+int open(const char *file);
+void close(int fd);
 
 /* System call.
  *
@@ -43,29 +50,134 @@ syscall_init (void) {
 void
 syscall_handler (struct intr_frame *f UNUSED) {
 	// TODO: Your implementation goes here.
-	printf ("system call!\n");
+	// printf ("system call!\n");
 
 	switch (f->R.rax)
 	{
+	case SYS_HALT:
+	    halt();
+		break;
+    case SYS_EXIT:
+	    exit(f->R.rdi);
+		break;
 	case SYS_WAIT:
 		f->R.rax = process_wait(f->R.rdi);
 		break;
-
 	case SYS_CREATE:
+	    f->R.rax = create(f->R.rdi, f->R.rsi);
 	    break;
-
 	case SYS_REMOVE:
+	    f->R.rax = remove(f->R.rdi);
 	    break;
-
 	case SYS_OPEN:
+	    f->R.rax = open(f->R.rdi);
 	    break;
-
 	case SYS_CLOSE:
+	    close(f->R.rdi);
 	    break;
-	
 	default:
 		break;
 	}
 
 	thread_exit ();
+}
+
+// Terminates Pintos by calling power_off(). No return.
+void halt(void) {
+	power_off();
+}
+
+// End current thread, record exit statusNo return.
+void exit(int status)
+{
+	struct thread *cur = thread_current();
+	cur->exit_status = status;
+
+	printf("%s: exit(%d)\n", thread_name(), status);  // Process Termination Message
+	thread_exit();
+}
+
+// 다음 상황이면 바로 종료
+// 1. Null pointer
+// 2. A pointer to kernel virtual address space (above KERN_BASE)
+// 3. A pointer to unmapped virtual memory (causes page_fault)
+void check_address(const uint64_t *uaddr) {
+	struct thread *cur = thread_current();
+	if (uaddr == NULL || !(is_user_vaddr(uaddr)) || pml4_get_page(cur->pml4, uaddr) == NULL) {
+		exit(-1);
+	}
+}
+
+// unsigned = unsigned int
+bool create(const char *file, unsigned initial_size) {
+	check_address(file);
+	return filesys_create(file, initial_size);
+}
+
+bool remove(const char *file) {
+	check_address(file);
+	return filesys_remove(file);
+}
+
+// Find open spot in current thread's fdt and put file in it. Returns the fd.
+int add_file_to_fdt(struct file *file) {
+	struct thread *cur = thread_current();
+	struct file **fdt = cur->fdTable;  // file descriptor table
+
+	while (cur->fdIdx < FDCOUNT_LIMIT && fdt[cur->fdIdx])
+	    cur->fdIdx++;
+    
+	// Error - fdt full
+	if (cur->fdIdx >= FDCOUNT_LIMIT)
+	    return -1;
+	
+	fdt[cur->fdIdx] = file;
+	return cur->fdIdx;
+}
+
+// Opens the file called file, returns fd or -1 (if file could not be opened for some reason)
+int open(const char *file) {
+	check_address(file);
+	struct file *fileobj = filesys_open(file);
+
+	if (fileobj == NULL)
+	    return -1;
+	
+	int fd = add_file_to_fdt(fileobj);
+
+	// FD table full
+	if (fd == -1)
+		file_close(fileobj);
+
+	return fd;
+}
+
+// Check if given fd is valid, return cur->fdTable[fd]
+static struct file *find_file_by_fd(int fd) {
+	struct thread *cur = thread_current();
+
+	// Error - invalid fd
+	if (fd < 0 || fd >= FDCOUNT_LIMIT)
+	    return NULL;
+	
+	return cur->fdTable[fd];  // automatically returns NULL if empty
+}
+
+void remove_file_from_fdt(int fd) {
+	struct thread *cur = thread_current();
+
+	// Error - invalid fd
+	if (fd < 0 || fd >= FDCOUNT_LIMIT)
+	    return;
+
+	cur->fdTable[fd] = NULL;
+}
+
+// Closes file descriptor fd. Ignores NULL file. Returns nothing.
+void close(int fd) {
+	struct file *fileobj = find_file_by_fd(fd);
+	if (fileobj == NULL)
+	    return;
+
+	remove_file_from_fdt(fd);
 }
