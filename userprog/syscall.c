@@ -145,6 +145,7 @@ int add_file_to_fdt(struct file *file) {
 	struct file **fdt = cur->fd_table;
 
 	// Project2-extra - (multi-oom) Find open spot from the front
+	// fd의 위치가 제한 범위를 넘지 않고, fdtable의 인덱스 위치와 일치한다면
 	while (cur->fd_idx < FDCOUNT_LIMIT && fdt[cur->fd_idx]) {
 		cur->fd_idx++;
 	}

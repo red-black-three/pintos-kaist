@@ -93,10 +93,6 @@ tid_t process_fork (const char *name, struct intr_frame *if_) {
 		return TID_ERROR;
 	}
 
-#ifdef DEBUG_WAIT
-	printf("[process_fork] pid %d : child %s\n", tid, child->name);
-#endif
-
 	return tid;
 }
 
@@ -111,54 +107,38 @@ static bool duplicate_pte (uint64_t *pte, void *va, void *aux) {
 	bool writable;
 
 	/* 1. TODO: If the parent_page is kernel page, then return immediately. */
-// 	if (is_kernel_vaddr(va))
-// 	{
-// #ifdef DEBUG
-// 		//printf("[fork-duplicate] fail at step 1 %llx\n", va);
-// #endif
-// 		return true; // return false ends pml4_for_each, which is undesirable - just return true to pass this kernel va
-// 	}
-// 	else
-// 	{
-// #ifdef DEBUG
-// 		printf("[fork-duplicate] pass at step 1 %llx\n", va);
-// #endif
-// 	}
-
-// #ifdef DEBUG
-// 	printf("Is user %d, is kernel %d, writable %d\n", is_user_pte(pte), is_kern_pte(pte), is_writable(pte));
-// #endif
+	if (is_kernel_vaddr(va)) {
+		return true; // return false ends pml4_for_each, which is undesirable - just return true to pass this kernel va
+	}
 
 	/* 2. Resolve VA from the parent's page map level 4. */
 	parent_page = pml4_get_page (parent->pml4, va);
-	if (parent_page == NULL)
-	{
+	if (parent_page == NULL) {
 		printf("[fork-duplicate] failed to fetch page for user vaddr 'va'\n"); // #ifdef DEBUG
 		return false;
 	}
 
-// #ifdef DEBUG
-// 	// page table, virtual address 이해
-// 	// 'pte' here = address pointing to one page table entry
-// 	// *pte = page table entry = address of the physical frame
-// 	void *test = ptov(PTE_ADDR(*pte)) + pg_ofs(va); // should be same as parent_page -> Yes!
-// 	uint64_t va_offset = pg_ofs(va);				// should be 0; va comes from PTE, so there must be no 12bit physical offset
-// #endif
+#ifdef DEBUG
+	// page table, virtual address 이해
+	// 'pte' here = address pointing to one page table entry
+	// *pte = page table entry = address of the physical frame
+	void *test = ptov(PTE_ADDR(*pte)) + pg_ofs(va); // should be same as parent_page -> Yes!
+	uint64_t va_offset = pg_ofs(va);				// should be 0; va comes from PTE, so there must be no 12bit physical offset
+#endif
 
 	/* 3. TODO: Allocate new PAL_USER page for the child and set result to
 	 *    TODO: NEWPAGE. */
-	// newpage = palloc_get_page(PAL_USER);
-	// if (newpage == NULL)
-	// {
-	// 	printf("[fork-duplicate] failed to palloc new page\n"); // #ifdef DEBUG
-	// 	return false;
-	// }
+	newpage = palloc_get_page(PAL_USER);
+	if (newpage == NULL) {
+		printf("[fork-duplicate] failed to palloc new page\n"); // #ifdef DEBUG
+		return false;
+	}
 
 	/* 4. TODO: Duplicate parent's page to the new page and
 	 *    TODO: check whether parent's page is writable or not (set WRITABLE
 	 *    TODO: according to the result). */
-	// memcpy(newpage, parent_page, PGSIZE);
-	// writable = is_writable(pte); // *PTE is an address that points to parent_page
+	memcpy(newpage, parent_page, PGSIZE);
+	writable = is_writable(pte); // *PTE is an address that points to parent_page
 
 	/* 5. Add new page to child's page table at address VA with WRITABLE
 	 *    permission. */
@@ -168,19 +148,19 @@ static bool duplicate_pte (uint64_t *pte, void *va, void *aux) {
 		return false;
 	}
 
-// #ifdef DEBUG
-// 	// TEST) is 'va' correctly mapped to newpage?
-// 	if (pml4_get_page(current->pml4, va) != newpage)
-// 		printf("Not mapped!"); // never called
+#ifdef DEBUG
+	// TEST) is 'va' correctly mapped to newpage?
+	if (pml4_get_page(current->pml4, va) != newpage)
+		printf("Not mapped!"); // never called
 
-// 	printf("--Completed copy--\n");
-// #endif
+	printf("--Completed copy--\n");
+#endif
 
 	return true;
 }
 #endif
 
-// Project2-extra
+// Project2-extra ??
 struct MapElem
 {
 	uintptr_t key;
@@ -205,15 +185,19 @@ static void __do_fork (void *aux) {
 #endif
 
 	/* 1. Read the cpu context to local stack. */
+	// 
 	memcpy (&if_, parent_if, sizeof (struct intr_frame));
 	if_.R.rax = 0;
 
 	/* 2. Duplicate PT */
+	// 커널 가상 주소에 메모리 매핑
 	current->pml4 = pml4_create();
 	if (current->pml4 == NULL)
 		goto error;
 
 	process_activate (current);
+
+// 이거 뭔데?
 #ifdef VM
 	supplemental_page_table_init (&current->spt);
 	if (!supplemental_page_table_copy (&current->spt, &parent->spt))
@@ -229,51 +213,51 @@ static void __do_fork (void *aux) {
 	 * TODO:       from the fork() until this function successfully duplicates
 	 * TODO:       the resources of parent.*/
 
-	// multi-oom) Failed to duplicate?
+	// multi-oom) Failed to duplicate
 	if (parent->fd_idx == FDCOUNT_LIMIT)
 		goto error;
 
 	// Project2-extra) multiple fds sharing same file - use associative map (e.g. dict, hashmap) to duplicate these relationships
 	// other test-cases like multi-oom don't need this feature
-	// const int MAPLEN = 10;
-	// struct MapElem map[10]; // key - parent's struct file * , value - child's newly created struct file *
-	// int dupCount = 0;		// index for filling map
+	const int MAPLEN = 10;
+	struct MapElem map[10]; // key - parent's struct file * , value - child's newly created struct file *
+	int dup_count = 0;		// index for filling map
 
-	// for (int i = 0; i < FDCOUNT_LIMIT; i++)
-	// {
-	// 	struct file *file = parent->fd_table[i];
-	// 	if (file == NULL)
-	// 		continue;
+	for (int i = 0; i < FDCOUNT_LIMIT; i++)
+	{
+		struct file *file = parent->fd_table[i];
+		if (file == NULL)
+			continue;
 
-	// 	// Project2-extra) linear search on key-pair array
-	// 	// If 'file' is already duplicated in child, don't duplicate again but share it
-	// 	bool found = false;
-	// 	for (int j = 0; j < MAPLEN; j++)
-	// 	{
-	// 		if (map[j].key == file)
-	// 		{
-	// 			found = true;
-	// 			current->fd_table[i] = map[j].value;
-	// 			break;
-	// 		}
-	// 	}
-	// 	if (!found)
-	// 	{
-	// 		struct file *new_file;
-	// 		if (file > 2)
-	// 			new_file = file_duplicate(file);
-	// 		else
-	// 			new_file = file; // 1 STDIN, 2 STDOUT
+		// Project2-extra) linear search on key-pair array
+		// If 'file' is already duplicated in child, don't duplicate again but share it
+		bool found = false;
+		for (int j = 0; j < MAPLEN; j++)
+		{
+			if (map[j].key == file)
+			{
+				found = true;
+				current->fd_table[i] = map[j].value;
+				break;
+			}
+		}
+		if (!found)
+		{
+			struct file *new_file;
+			if (file > 2)
+				new_file = file_duplicate(file);
+			else
+				new_file = file; // 1 STDIN, 2 STDOUT
 
-	// 		current->fd_table[i] = new_file;
-	// 		if (dupCount < MAPLEN)
-	// 		{
-	// 			map[dupCount].key = file;
-	// 			map[dupCount++].value = new_file;
-	// 		}
-	// 	}
-	// }
-	// current->fd_idx = parent->fd_idx;
+			current->fd_table[i] = new_file;
+			if (dup_count < MAPLEN)
+			{
+				map[dup_count].key = file;
+				map[dup_count++].value = new_file;
+			}
+		}
+	}
+	current->fd_idx = parent->fd_idx;
 
 #ifdef DEBUG
 	printf("[do_fork] %s Ready to switch!\n", current->name);
@@ -361,19 +345,6 @@ int process_wait (tid_t child_tid UNUSED) {
 	/* XXX: Hint) The pintos exit if process_wait (initd), we recommend you
 	 * XXX:       to add infinite loop here before
 	 * XXX:       implementing the process_wait. */
-	
-	struct thread *cur = thread_current();
-
-#ifdef DEBUG_WAIT
-	printf("\nparent children # : %d\n", list_size(&cur->child_list));
-
-	printf("Head - ");
-	for (struct list_elem *e = list_begin(&cur->child_list); e != list_end(&cur->child_list); e = list_next(e))
-	{
-		printf("%llx - ", e);
-	}
-	printf("Tail\n");
-#endif
 
 	struct thread *child = get_child_with_pid(child_tid);
 
@@ -381,18 +352,10 @@ int process_wait (tid_t child_tid UNUSED) {
 	if (child == NULL)
 		return -1;
 
-#ifdef DEBUG_WAIT
-	printf("cur %s waits child %s - ", cur->name, child->name);
-#endif
-
 	// Parent waits until child signals (sema_up) after its execution
 	sema_down(&child->wait_sema);
 
 	int exit_status = child->exit_status;
-
-#ifdef DEBUG_WAIT
-	printf("[process_wait] Child %d %s : exit status - %d\n", child_tid, child->name, exit_status);
-#endif
 
 	// Keep child page so parent can get exit_status
 	list_remove(&child->child_elem);
@@ -417,7 +380,7 @@ void process_exit (void) {
 	palloc_free_multiple(cur->fd_table, FDT_PAGES); // multi-oom
 
 	// P2-5 Close current executable run by this process
-	// file_close(cur->running);
+	file_close(cur->running);
 
 	process_cleanup();
 
@@ -549,9 +512,9 @@ static bool load (const char *file_name, struct intr_frame *if_) {
 		goto done;
 	}
 
-	// // Project 2-5. Deny writes to running exec
-	// t->running = file;
-	// file_deny_write(file);
+	// 현재 실행 중인 파일의 경우 write할 수 없도록 설정
+	t->running = file;
+	file_deny_write(file);
 
 	/* Read and verify executable header. */
 	// ELF파일 헤더 정보를 읽어와 저장
@@ -931,15 +894,11 @@ struct thread *get_child_with_pid(int pid) {
 	struct thread *cur = thread_current();
 	struct list *child_list = &cur->child_list;
 
-#ifdef DEBUG_WAIT
-	//printf("\nparent children # : %d\n", list_size(child_list));
-#endif
-
-	for (struct list_elem *e = list_begin(child_list); e != list_end(child_list); e = list_next(e))
-	{
+	for (struct list_elem *e = list_begin(child_list); e != list_end(child_list); e = list_next(e)) {
 		struct thread *t = list_entry(e, struct thread, child_elem);
-		if (t->tid == pid)
+		if (t->tid == pid) {
 			return t;
+		}
 	}
 	return NULL;
 }

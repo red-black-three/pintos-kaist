@@ -2,7 +2,7 @@
 #define FILESYS_FILE_H
 
 #include "filesys/off_t.h"
-#include <list.h>
+#include <stdbool.h>
 
 /* An open file. */
 struct file {
