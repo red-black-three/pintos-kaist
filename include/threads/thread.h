@@ -35,6 +35,10 @@ typedef int tid_t;
 #define PRI_DEFAULT 31                  /* Default priority. */
 #define PRI_MAX 63                      /* Highest priority. */
 
+#define NICE_DEFAULT 0
+#define RECENT_CPU_DEFAULT 0
+#define LOAD_AVG_DEFAULT 0
+
 /* A kernel thread or user process.
  *
  * Each thread structure is stored in its own 4 kB page.  The
@@ -107,6 +111,8 @@ struct thread {
 
 	/* Shared between thread.c and synch.c. */
 	struct list_elem elem;              /* List element. */
+	struct list_elem allelem;
+
 	struct list_elem allelem;
 
 	// 스레드가 현재 얻기 위해 기다리고 있는 lock.
@@ -204,7 +210,6 @@ void update_next_tick_to_awake(int64_t ticks);
 
 // 우선순위 비교 함수 선언
 bool thread_compare_priority(struct list_elem *higher, struct list_elem *lower, void *aux UNUSED);
-bool sema_compare_priority(const struct list_elem *higher, const struct list_elem *lower, void *aux UNUSED);
 bool thread_compare_donate_priority(const struct list_elem *higher, const struct list_elem *lower, void *aux UNUSED);
 
 void donate_priority(void);

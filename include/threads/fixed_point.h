@@ -7,7 +7,6 @@ INT_MIN: (1 00000000000000000 00000000000000)
 매개변수 x, y: fixed_point 형식의 실수
 매개변수 n: fixed_point 형식의 정수. 모든 mixed 연산에서 n은 두 번째 파라미터로 들어오게 한다.
 */
-
 #define F (1 << 14)
 #define INT_MAX ((1 << 31) - 1)
 #define INT_MIN (-(1 << 31))

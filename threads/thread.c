@@ -31,6 +31,7 @@ static struct list ready_list;
 
 /* List of all processes.  Processes are added to this list
    when they are first scheduled and removed when they exit. */
+
 static struct list all_list;
 
 static struct list sleep_list;
@@ -121,6 +122,8 @@ void thread_init (void) {
 	list_init (&destruction_req);
 	list_init (&all_list);
 
+	list_init(&all_list);
+
 	// sleep_list 초기화 함수
 	list_init(&sleep_list);
 
@@ -185,6 +188,8 @@ void thread_awake(int64_t wakeup_tick) {
 		}
 	}
 }
+
+int load_avg;
 
 /* Starts preemptive thread scheduling by enabling interrupts.
    Also creates the idle thread. */
@@ -368,6 +373,7 @@ void thread_exit (void) {
 	process_exit ();
 #endif
 	list_remove(&thread_current()->allelem);
+
 	/* Just set our status to dying and schedule another process.
 	   We will be destroyed during the call to schedule_tail(). */
 	intr_disable ();
@@ -396,9 +402,9 @@ void thread_yield (void) {
 
 /* Sets the current thread's priority to NEW_PRIORITY. */
 void thread_set_priority (int new_priority) {
-	if (thread_mlfqs) {
-		return;
-	}
+	if (thread_mlfqs)
+	    return;
+
 	thread_current ()->init_priority = new_priority;	// priority에서 init_priority로 변경
 
 	// running 시 priority 변경 일어났을 때, donations 리스트 안에 있는 스레드들의 우선순위보다 높은 경우
@@ -430,6 +436,7 @@ int thread_get_nice (void) {
 	enum intr_level old_level = intr_disable ();
 	int nice = thread_current ()-> nice;
 	intr_set_level (old_level);
+
 	return nice;
 }
 
@@ -439,6 +446,7 @@ int thread_get_load_avg (void) {
 	enum intr_level old_level = intr_disable ();
 	int load_avg_value = fp_to_int_round (mult_mixed (load_avg, 100));
 	intr_set_level (old_level);
+
 	return load_avg_value;
 }
 
@@ -446,7 +454,7 @@ int thread_get_load_avg (void) {
 // 현재 스레드의 recent_cpu * 100값을 반환
 int thread_get_recent_cpu (void) {
   enum intr_level old_level = intr_disable ();
-  int recent_cpu= fp_to_int_round (mult_mixed (thread_current ()->recent_cpu, 100));
+  int recent_cpu = fp_to_int_round (mult_mixed (thread_current ()->recent_cpu, 100));
   intr_set_level (old_level);
   return recent_cpu;
 }
@@ -512,6 +520,7 @@ static void init_thread (struct thread *t, const char *name, int priority) {
 	t->tf.rsp = (uint64_t) t + PGSIZE - sizeof (void *);
 	t->priority = priority;
 	t->magic = THREAD_MAGIC;
+
 	list_push_back(&all_list, &t->allelem);
   
 	// for donation
@@ -521,7 +530,7 @@ static void init_thread (struct thread *t, const char *name, int priority) {
 
 	// for MLFQS
 	t->nice = NICE_DEFAULT;
-  	t->recent_cpu = RECENT_CPU_DEFAULT;
+  t->recent_cpu = RECENT_CPU_DEFAULT;
 
 	// for systeam call
 	list_init(&t->child_list);
