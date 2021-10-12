@@ -5,9 +5,16 @@
 #include <list.h>
 #include <stdint.h>
 #include "threads/interrupt.h"
+#include "threads/synch.h"
 #ifdef VM
 #include "vm/vm.h"
 #endif
+
+// for MLFQS
+#define PRI_MAX 63
+#define NICE_DEFAULT 0
+#define RECENT_CPU_DEFAULT 0
+#define LOAD_AVG_DEFAULT 0
 
 
 /* States in a thread's life cycle. */
@@ -104,6 +111,7 @@ struct thread {
 
 	/* Shared between thread.c and synch.c. */
 	struct list_elem elem;              /* List element. */
+	struct list_elem allelem;
 
 	struct list_elem allelem;
 
@@ -119,8 +127,25 @@ struct thread {
 
 	int64_t sleep_ticks;
 
-	int nice;
-	int recent_cpu;
+	// MLFQS 위한 변수 추가
+	int nice;			// 다른 스레드에 자신의 CPU time 양보하는 정도
+	int recent_cpu;		// 최근에 cpu 얼마나 사용했는지
+
+	// 시스템 콜 위한 변수 추가
+	int exit_status;				// 자식 프로세스의 exit 상태를 부모에게 전달
+	struct file **fd_table;			// thread_create에서 할당
+	int fd_idx;						// fd테이블에 open spot의 인덱스
+
+	struct intr_frame parent_if;
+	struct semaphore fork_sema;
+
+	struct list child_list;
+	struct list_elem child_elem;
+
+	struct semaphore wait_sema;
+	struct semaphore free_sema;
+
+	struct file *running;
 
 #ifdef USERPROG
 	/* Owned by userprog/process.c. */
@@ -170,7 +195,6 @@ int thread_get_load_avg (void);
 
 void do_iret (struct intr_frame *tf);
 
-#endif /* threads/thread.h */
 
 // 스레드를 ticks 시각까지 재우는 함수
 void thread_sleep(int64_t ticks);
@@ -183,7 +207,6 @@ int64_t get_next_tick_to_awake(void);
 
 // 가장 먼저 일어날 스레드가 일어날 시각을 업데이트함
 void update_next_tick_to_awake(int64_t ticks);
-
 
 // 우선순위 비교 함수 선언
 bool thread_compare_priority(struct list_elem *higher, struct list_elem *lower, void *aux UNUSED);
@@ -200,7 +223,13 @@ void test_max_priority(void);
 void mlfqs_calculate_priority(struct thread *t);
 void mlfqs_calculate_recent_cpu(struct thread *t);
 void mlfqs_calculate_load_avg(void);
-
 void mlfqs_increment_recent_cpu(void);
 void mlfqs_recalculate_recent_cpu(void);
-void mlfqs_recalculate_priority(void);
+void mlfqs_recalculate_priority (void);
+
+
+// for system call
+#define FDT_PAGES 3						  // pages to allocate for file descriptor tables (thread_create, process_exit)
+#define FDCOUNT_LIMIT FDT_PAGES *(1 << 9) // Limit fdIdx
+
+#endif /* threads/thread.h */

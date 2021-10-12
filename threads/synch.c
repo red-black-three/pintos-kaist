@@ -193,6 +193,12 @@ void lock_acquire (struct lock *lock) {
 		return;
 	}
 
+	if (thread_mlfqs) {
+		sema_down(&lock->semaphore);
+		lock->holder = thread_current();
+		return;
+	}
+
 	struct thread *cur = thread_current();
 	if (lock->holder) {
 		cur->wait_on_lock = lock;
@@ -239,6 +245,12 @@ void lock_release (struct lock *lock) {
 		return;
 	}
 
+	lock->holder = NULL;
+  	if (thread_mlfqs) {
+    	sema_up(&lock->semaphore);
+    	return ;
+  	}
+	  
 	remove_with_lock(lock);		// lock release할 때, 자신에게 우선순위 donation했던 스레드 donations 리스트에서 제거
 	refresh_priority();			// 우선순위 재설정
 
