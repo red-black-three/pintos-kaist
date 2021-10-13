@@ -113,8 +113,6 @@ struct thread {
 	struct list_elem elem;              /* List element. */
 	struct list_elem allelem;
 
-	struct list_elem allelem;
-
 	// 스레드가 현재 얻기 위해 기다리고 있는 lock.
 	// 스레드는 이 lock이 ralease 되기를 기다림
 	struct lock *wait_on_lock;
@@ -146,6 +144,12 @@ struct thread {
 	struct semaphore free_sema;
 
 	struct file *running;
+
+	// PJT2 Extra - count the number of open stdin/stdout
+	// dup2 may copy stdin or stdout
+	// stdin or stdout is not really closed until these counts goes 0
+	int stdin_count;
+	int stdout_count;
 
 #ifdef USERPROG
 	/* Owned by userprog/process.c. */

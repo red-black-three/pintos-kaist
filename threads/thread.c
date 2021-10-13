@@ -272,8 +272,10 @@ tid_t thread_create (const char *name, int priority, thread_func *function, void
 	if (t->fd_table == NULL)
 		return TID_ERROR;
 	t->fd_idx = 2; 			// 0 : stdin, 1 : stdout
-	// t->fd_table[0] = 11; 	// dummy values to distinguish fd 0 and 1 from NULL
-	// t->fd_table[1] = 22;
+	t->fd_table[0] = 1; 	// dummy values to distinguish fd 0 and 1 from NULL
+	t->fd_table[1] = 2;
+	t->stdin_count = 1;
+	t->stdout_count = 1;
 
 	// Parent child
 	struct thread *cur = thread_current();

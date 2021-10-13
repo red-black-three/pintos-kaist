@@ -17,6 +17,10 @@ void syscall_handler (struct intr_frame *);
 
 static struct file *find_file_by_fd(int fd);
 
+// PJT2 Extra
+const int STDIN = 1;
+const int STDOUT = 2;
+
 void check_address(uaddr);
 void halt(void);
 void exit(int status);
@@ -262,19 +266,32 @@ int read(int fd, void *buffer, unsigned size) {
 	struct thread *cur = thread_current();
 	struct file *file_fd = find_file_by_fd(fd);
 
-	if (fd == 0) {
-		*(char *)buffer = input_getc();		// 키보드로 입력 받은 문자를 반환하는 함수
-		read_result = size;
-	}
-	else {
-		if (find_file_by_fd(fd) == NULL) {
-			return -1;
+	if (file_fd == NULL)
+	    return -1;
+	
+	if (file_fd == STDIN) {
+		if (cur->stdin_count == 0) {
+			// Not reachable
+			NOT_REACHED();
+			remove_file_from_fdt(fd);
+			read_result = -1;
+		} else {
+			int i;
+			unsigned char *buf = buffer;
+			for (i = 0; i < size; i++) {
+				char c = input_getc();
+				*buf++ = c;
+				if (c == '\0')
+				    break;
+			}
+			read_result = i;
 		}
-		else {
+	} else if (file_fd == STDOUT) {
+		read_result = -1;
+	} else {
 			lock_acquire(&filesys_lock);
 			read_result = file_read(find_file_by_fd(fd), buffer, size);
 			lock_release(&filesys_lock);
-		}
 	}
 	return read_result;
 }
@@ -284,20 +301,30 @@ int write(int fd, const void *buffer, unsigned size) {
 	check_address(buffer);
 
 	int write_result;
-	lock_acquire(&filesys_lock);
-	if (fd == 1) {
-		putbuf(buffer, size);		// 문자열을 화면에 출력하는 함수
-		write_result = size;
-	}
-	else {
-		if (find_file_by_fd(fd) != NULL) {
-			write_result = file_write(find_file_by_fd(fd), buffer, size);
-		}
-		else {
+	
+	struct file *fileobj = find_file_by_fd(fd);
+	if (fileobj == NULL)
+	    return -1;
+
+	struct thread *cur = thread_current();
+
+	if (fileobj == STDOUT) {
+		if (cur->stdout_count == 0) {
+			NOT_REACHED();
+			remove_file_from_fdt(fd);
 			write_result = -1;
+		} else {
+			putbuf(buffer, size);
+			write_result = size;
 		}
+	} else if (fileobj == STDIN) {
+		write_result = -1;
+	} else {
+		lock_acquire(&filesys_lock);
+		write_result = file_write(fileobj, buffer, size);
+		lock_release(&filesys_lock);
 	}
-	lock_release(&filesys_lock);
+
 	return write_result;
 }
 
@@ -325,7 +352,24 @@ void close(int fd) {
 	if (fileobj == NULL) {
 		return;
 	}
+
+    struct thread *cur = thread_current();
+
+	if (fileobj == STDIN && cur->stdin_count > 0) {
+	    cur->stdin_count--;
+	} else if (fileobj == STDOUT && cur->stdout_count > 0) {
+	    cur->stdout_count--;
+	}
+	
 	remove_file_from_fdt(fd);
+
+	if (fileobj <= 2)
+	    return;
+
+	if (fileobj->dupCount == 0)
+	    file_close(fileobj);
+	else
+	    fileobj->dupCount--;
 }
 
 // dup2함수: 식별자 테이블 엔트리의 이전 내용을 덮어써서 식별자 테이블 엔트리 oldfd를 newfd로 복사
@@ -341,6 +385,13 @@ int dup2(int oldfd, int newfd) {
 	if (oldfd == newfd) {
 		return newfd;		// oldfd == newfd 이면 복제하지 않고 newfd 리턴
 	}
+
+	if (file_fd == STDIN)
+	    cur->stdin_count++;
+	else if (file_fd == STDOUT)
+	    cur->stdout_count++;
+	else
+	    file_fd->dupCount++;
 
 	close(newfd);
 	fdt[newfd] = file_fd;
